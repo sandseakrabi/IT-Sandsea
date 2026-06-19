@@ -1261,6 +1261,7 @@
     // เคสที่มีอยู่แล้วตอนเปิดหน้า ถือว่า "เคยเห็นแล้ว" ทั้งหมด ไม่ต้องแจ้งเตือนซ้ำ
     _seenIds = new Set(allCasesCache.map(c => c.Case_ID));
     _pollReady = true;
+    console.log('[Poll] init — เห็น ' + _seenIds.size + ' เคส, polling ทุก 30 วิ');
     requestNotificationPermission();
 
     checkNewCases(); // เช็คทันที 1 ครั้งตอนเริ่ม ไม่ต้องรอครบ 30 วิ
@@ -1275,17 +1276,22 @@
       const freshCases = cases.filter(c => !_seenIds.has(c.Case_ID));
 
       if (freshCases.length > 0) {
-        freshCases.forEach(c => _seenIds.add(c.Case_ID));
+        freshCases.forEach(c => {
+          console.log('[Poll] เคสใหม่: ' + c.Case_ID);
+          _seenIds.add(c.Case_ID);
+        });
         playNotificationSound();
         showBrowserNotification(freshCases);
         const names = freshCases.map(c => c.Case_ID).join(', ');
         showToast('มีเคสใหม่เข้ามา ' + freshCases.length + ' เคส (' + names + ')');
         await loadAllData();
       } else {
+        console.log('[Poll] ไม่มีเคสใหม่ — ' + new Date().toLocaleTimeString('th-TH'));
         // ไม่มีเคสใหม่ แต่ก็ยังต้องอัพเดต _seenIds ให้ตรงกับฐานข้อมูลปัจจุบันเสมอ
         cases.forEach(c => _seenIds.add(c.Case_ID));
       }
     } catch (err) {
+      console.warn('[Poll] เช็คเคสใหม่ไม่สำเร็จ:', err);
       // ถ้าเช็คไม่สำเร็จ (เช่น เน็ตหลุดชั่วคราว) ข้ามรอบนี้ไปเช็คใหม่รอบถัดไป ไม่ต้องโชว์ error รบกวน
     }
   }
@@ -1322,11 +1328,41 @@
   function showBrowserNotification(freshCases) {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     const count = freshCases.length;
+    const title = 'Sandsea IT - มีเคสใหม่';
     const body = count === 1
       ? (freshCases[0].Category || 'ปัญหาใหม่') + ' · ' + (freshCases[0].Reporter_Name || '')
       : 'มีพนักงานแจ้งปัญหาเข้ามา ' + count + ' เคส กดเพื่อเปิดดู';
-    const n = new Notification('Sandsea IT - มีเคสใหม่', { body, tag: 'sandsea-new-case' });
-    n.onclick = () => { window.focus(); n.close(); };
+    const tag = count === 1 ? freshCases[0].Case_ID : 'sandsea-new-case';
+
+    // ใช้ Service Worker showNotification เป็นหลัก เพราะ new Notification() ตรงๆ
+    // ใช้ไม่ได้บน Android เวลาเปิดเป็นแอปที่ติดตั้งแล้ว (PWA) — Android บังคับ
+    // ให้แจ้งเตือนผ่าน ServiceWorkerRegistration เท่านั้น ถ้าใช้ new Notification()
+    // ตรงๆ บน Android PWA จะเงียบหรือ error ทันที ไม่ขึ้นอะไรเลย
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready.then(reg => {
+        reg.showNotification(title, {
+          body,
+          icon: './icon-192.png',
+          badge: './icon-192.png',
+          tag,
+          renotify: true,
+          vibrate: [200, 100, 200],
+          data: { caseId: tag }
+        }).catch(() => {
+          // ถ้า icon path ไม่มีจริงบางเบราว์เซอร์จะ error ทั้งก้อน ลองอีกทีแบบไม่มี icon
+          reg.showNotification(title, { body, tag, renotify: true }).catch(() => {});
+        });
+      });
+    } else {
+      // fallback สำหรับ desktop / browser ที่ไม่มี Service Workerควบคุมอยู่
+      try {
+        const n = new Notification(title, { body, tag, renotify: true });
+        n.onclick = () => { window.focus(); n.close(); };
+        setTimeout(() => n.close(), 8000);
+      } catch (e) {
+        // บาง browser โยน error ถ้าเรียกจากหน้าที่ลงทะเบียน SW ไว้ ข้ามไปเงียบๆ เสียง+toast ยังทำงาน
+      }
+    }
   }
 
   function playNotificationSound() {
