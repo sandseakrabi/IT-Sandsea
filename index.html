@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -870,6 +871,13 @@
   // ===================================================================
   const DASHBOARD_PASSWORD = 'sandsea2026';
 
+  // ===================================================================
+  // กุญแจ VAPID (Public Key เท่านั้น) — ใช้ตอนขอลงทะเบียนรับ Push Notification
+  // ทำไมใส่ตรงนี้ได้เลยไม่ต้องปิดบัง: นี่คือ "กุญแจสาธารณะ" ใครเห็นก็ไม่เป็นไร
+  // ส่วนกุญแจลับ (Private Key) ห้ามใส่ในไฟล์นี้เด็ดขาด เก็บไว้ที่ Code.gs เท่านั้น
+  // ===================================================================
+  const VAPID_PUBLIC_KEY = 'BL2r6P0-F9hZtvq-MunY-9jQljbPyG5_onXv80oFLS-kab3ruIAnOuDTYcMcKBHOFmO2VlMSt4dizjNUBFvkIn4';
+
   const itLoginScreen = document.getElementById('itLoginScreen');
   const itAppScreen = document.getElementById('itAppScreen');
   const passwordInput = document.getElementById('passwordInput');
@@ -1273,6 +1281,7 @@
     _pollReady = true;
     console.log('[Poll] init — เห็น ' + _seenIds.size + ' เคส, polling ทุก 30 วิ');
     requestNotificationPermission();
+    subscribeToPush(); // ลงทะเบียนรับ Push Notification กับ Google — ทำงานได้แม้ปิดแอปหรือสลับไปแอปอื่น
 
     checkNewCases(); // เช็คทันที 1 ครั้งตอนเริ่ม ไม่ต้องรอครบ 30 วิ
     _notifyTimer = setInterval(checkNewCases, 30000);
@@ -1356,6 +1365,69 @@
       Notification.requestPermission().then(updateNotifyPermissionUI);
     }
     updateNotifyPermissionUI();
+  }
+
+  // ===================================================================
+  // ส่วนที่ 12.5: หน้า IT — ลงทะเบียนรับ Push Notification (ทำงานได้แม้ปิดแอป)
+  // -------------------------------------------------------------------
+  // ความต่างจาก Polling (ส่วนที่ 12 ด้านบน): Polling ต้องเปิดแท็บ/แอปนี้ค้างไว้
+  // เบราว์เซอร์มือถือถึงจะรัน setInterval ได้ ทำให้พลาดแจ้งเตือนตอนสลับไปแอปอื่น
+  // ส่วนนี้คือสมัครรับ "การปลุกจาก Google Push Service" แทน ซึ่ง Google จะปลุก
+  // Service Worker ของเราได้แม้ไม่ได้เปิดแท็บนี้อยู่เลย เพราะ Google คุยกับ
+  // ระบบปฏิบัติการของมือถือตรงๆ ไม่ผ่านแท็บที่ถูกพักไว้
+  //
+  // ทำไมต้องเรียกทั้ง subscribeToPush และ requestNotificationPermission (ด้านบน):
+  // requestNotificationPermission ดูแลเรื่อง "permission" และ banner เตือนถ้าถูกบล็อก
+  // ส่วนนี้ดูแลเรื่อง "สมัครสมาชิกกับ Push Service" ซึ่งจะขอ permission ซ้ำให้เอง
+  // ถ้ายังไม่เคยอนุญาต (เบราว์เซอร์จะไม่ถามซ้อนกัน 2 ครั้ง ถ้าตอบไปแล้วครั้งแรก)
+  // ===================================================================
+  async function subscribeToPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn('[Push] เบราว์เซอร์นี้ไม่รองรับ Push Notification');
+      return;
+    }
+
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+
+      // ถ้ายังไม่เคยสมัคร (หรือสมัครซ้ำเพราะ subscription เก่าหมดอายุ) ให้สมัครใหม่
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true, // บังคับตามสเปก: ทุก push ที่ได้รับต้องโชว์ notification ให้เห็นเสมอ ห้ามแอบทำงานเงียบๆ
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+        console.log('[Push] สมัครรับ Push Notification สำเร็จ');
+      }
+
+      // ส่ง "ที่อยู่ Push Service" ของเครื่องนี้ไปเก็บไว้ที่ Apps Script
+      // ทำไมต้องส่งทุกครั้งที่เปิดแอป (ไม่ใช่แค่ครั้งแรก): เผื่อกรณี Apps Script
+      // ทำ Subscriptions sheet หาย/ถูกลบไปก่อนหน้า จะได้บันทึกกลับเข้าไปใหม่อัตโนมัติ
+      // ฝั่ง backend จะเช็คเองว่าที่อยู่นี้มีอยู่แล้วหรือยัง ไม่บันทึกซ้ำ
+      await apiPost('saveSubscription', { subscription: sub.toJSON() });
+      console.log('[Push] บันทึกการสมัครไว้ที่เซิร์ฟเวอร์เรียบร้อย');
+    } catch (err) {
+      // สาเหตุที่พบบ่อย: ผู้ใช้กดปฏิเสธ permission, หรือเบราว์เซอร์เก่าไม่รองรับ
+      // ไม่ต้องโชว์ error รบกวนผู้ใช้ เพราะระบบ Polling เดิมยังทำงานเป็น fallback อยู่
+      console.warn('[Push] สมัครรับ Push Notification ไม่สำเร็จ:', err);
+    }
+  }
+
+  /**
+   * แปลง VAPID public key จากรูปแบบ base64url (string) ให้เป็น Uint8Array
+   * ทำไมต้องแปลง: browser API (pushManager.subscribe) บังคับรับ applicationServerKey
+   * เป็น Uint8Array เท่านั้น ส่ง string ตรงๆ ไม่ได้ ฟังก์ชันนี้เป็นโค้ดมาตรฐาน
+   * ที่ใช้แปลงรูปแบบกันทั่วไปในการทำ Web Push (ไม่ได้เกี่ยวกับการเข้ารหัสเอง)
+   */
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
   }
 
   /**
