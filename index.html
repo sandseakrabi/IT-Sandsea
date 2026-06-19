@@ -15,8 +15,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Sandsea IT">
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
 
 <style>
   :root {
@@ -104,7 +104,7 @@
     gap: 14px;
   }
 
-  .role-btn . { font-size: 26px; }
+  .role-btn .icon { font-size: 26px; }
   .role-btn .text-wrap { display: flex; flex-direction: column; align-items: flex-start; }
   .role-btn .text-wrap small { font-weight: 400; font-size: 12px; opacity: 0.8; }
 
@@ -201,7 +201,7 @@
     user-select: none;
   }
 
-  .category-btn . { font-size: 22px; display: block; margin-bottom: 4px; }
+  .category-btn .icon { font-size: 22px; display: block; margin-bottom: 4px; }
   .category-btn.active { border-color: var(--ocean); background: var(--foam); color: var(--deep-sea); }
 
   .photo-zone {
@@ -214,7 +214,7 @@
     font-size: 14px;
   }
 
-  .photo-zone . { font-size: 28px; display: block; margin-bottom: 6px; }
+  .photo-zone .icon { font-size: 28px; display: block; margin-bottom: 6px; }
 
   #photoPreview { margin-top: 12px; max-width: 100%; border-radius: 10px; display: none; }
 
@@ -414,7 +414,7 @@
        =================================================================== -->
   <div class="screen active" id="roleScreen">
     <div class="role-card">
-      <img class="logo" src="icon-192.png" alt="Sandsea IT logo">
+      <img class="logo" src="icons/icon-192.png" alt="Sandsea IT logo">
       <p>ระบบ IT — เลือกการใช้งานของคุณ</p>
 
       <button class="role-btn staff" id="goStaffBtn">
@@ -522,7 +522,7 @@
     <div id="itLoginScreen" class="login-wrap">
       <div class="login-card">
         <a class="back-link" id="itBackLinkFromLogin" style="margin: 0 0 14px;">← กลับหน้าแรก</a>
-        <img class="logo" src="icon-192.png" alt="Sandsea IT logo">
+        <img class="logo" src="icons/icon-192.png" alt="Sandsea IT logo">
         <p>กรอกรหัสผ่านเพื่อเข้าใช้งาน</p>
         <input type="password" id="passwordInput" placeholder="รหัสผ่าน" autofocus>
         <button id="loginBtn">เข้าสู่ระบบ</button>
@@ -648,6 +648,7 @@
         </div>
 
         <div class="panel" id="panel-cases">
+          <div id="notifyPermBanner" style="display:none; background:#fff4e5; color:#8a5300; border:1px solid #ffd699; border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:13px; line-height:1.5;"></div>
           <div class="filter-bar" id="caseFilterBar">
             <div class="filter-chip active" data-filter="all">ทั้งหมด</div>
             <div class="filter-chip" data-filter="New">ใหม่</div>
@@ -1245,45 +1246,87 @@
   }
 
   // ===================================================================
-  // ส่วนที่ 12: หน้า IT — ระบบแจ้งเตือน (Polling + เสียง + Browser Push)
+  // ส่วนที่ 12: หน้า IT — ระบบแจ้งเตือน (Polling ทุก 30 วินาที ไม่ต้อง VAPID/FCM)
+  // ใช้ _seenIds จำว่าเคสไหน "เคยเห็นแล้ว" แทนการเทียบแค่จำนวน (count)
+  // ทำไมต้องเทียบเป็นรายเคส (ไม่ใช่นับจำนวนอย่างเดิม): ถ้าเทียบแค่ตัวเลข
+  // เช่น เคสเก่าปิดไป 1 พร้อมกับเคสใหม่เปิดมา 1 ในรอบ poll เดียวกัน
+  // ผลรวมจะเท่าเดิม ทำให้ระบบคิดว่า "ไม่มีอะไรเปลี่ยน" และไม่แจ้งเตือนทั้งที่มีเคสใหม่จริง
   // ===================================================================
-  let previousNewCaseCount = 0;
+  let _notifyTimer = null;
+  let _seenIds = null;       // null = ยังไม่ได้ init, Set = init แล้ว (เก็บ Case_ID ที่เคยเห็น)
+  let _pollReady = false;    // true หลัง poll ครั้งแรกเสร็จ (กันแจ้งเตือนเคสเก่าตอนเพิ่งเปิดหน้า)
   let notificationPermissionAsked = false;
 
   function startPolling() {
-    previousNewCaseCount = allCasesCache.filter(c => c.Status === 'New').length;
+    // เคสที่มีอยู่แล้วตอนเปิดหน้า ถือว่า "เคยเห็นแล้ว" ทั้งหมด ไม่ต้องแจ้งเตือนซ้ำ
+    _seenIds = new Set(allCasesCache.map(c => c.Case_ID));
+    _pollReady = true;
     requestNotificationPermission();
 
-    pollTimer = setInterval(async () => {
-      try {
-        const result = await apiGet('getNewCaseCount');
-        if (result.count > previousNewCaseCount) {
-          const diff = result.count - previousNewCaseCount;
-          playNotificationSound();
-          showBrowserNotification(diff);
-          showToast('มีเคสใหม่เข้ามา ' + diff + ' เคส');
-          await loadAllData();
-        }
-        previousNewCaseCount = result.count;
-      } catch (err) {
-        // ถ้าเช็คไม่สำเร็จ ข้ามรอบนี้ไปเช็คใหม่รอบถัดไป ไม่ต้องโชว์ error รบกวน
+    checkNewCases(); // เช็คทันที 1 ครั้งตอนเริ่ม ไม่ต้องรอครบ 30 วิ
+    _notifyTimer = setInterval(checkNewCases, 30000);
+    pollTimer = _notifyTimer; // คงชื่อเดิมไว้เผื่อมีโค้ดอื่นอ้างถึง pollTimer
+  }
+
+  async function checkNewCases() {
+    if (!_pollReady || !_seenIds) return;
+    try {
+      const cases = await apiGet('getCases');
+      const freshCases = cases.filter(c => !_seenIds.has(c.Case_ID));
+
+      if (freshCases.length > 0) {
+        freshCases.forEach(c => _seenIds.add(c.Case_ID));
+        playNotificationSound();
+        showBrowserNotification(freshCases);
+        const names = freshCases.map(c => c.Case_ID).join(', ');
+        showToast('มีเคสใหม่เข้ามา ' + freshCases.length + ' เคส (' + names + ')');
+        await loadAllData();
+      } else {
+        // ไม่มีเคสใหม่ แต่ก็ยังต้องอัพเดต _seenIds ให้ตรงกับฐานข้อมูลปัจจุบันเสมอ
+        cases.forEach(c => _seenIds.add(c.Case_ID));
       }
-    }, 20000);
+    } catch (err) {
+      // ถ้าเช็คไม่สำเร็จ (เช่น เน็ตหลุดชั่วคราว) ข้ามรอบนี้ไปเช็คใหม่รอบถัดไป ไม่ต้องโชว์ error รบกวน
+    }
   }
 
   function requestNotificationPermission() {
     if (notificationPermissionAsked) return;
     notificationPermissionAsked = true;
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+    if (!('Notification' in window)) return;
+
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(updateNotifyPermissionUI);
+    }
+    updateNotifyPermissionUI();
+  }
+
+  /**
+   * โชว์ข้อความเตือนตรงๆ ถ้า browser notification ถูกบล็อก
+   * ทำไมต้องมี: เดิมถ้า user กดปฏิเสธ permission (หรือเบราว์เซอร์บล็อกเงียบๆ
+   * เพราะไม่ได้ขอตอนมี user gesture) ระบบจะไม่แจ้งอะไรเลย ทำให้ดูเหมือน
+   * "ไม่มีการแจ้งเตือน" ทั้งที่จริงๆคือ permission ไม่ผ่าน ต้องโชว์ให้เห็นชัดๆ
+   * เสียง + Toast ในแอปยังทำงานปกติเสมอไม่ว่า permission จะเป็นอะไร
+   */
+  function updateNotifyPermissionUI() {
+    const banner = document.getElementById('notifyPermBanner');
+    if (!banner) return;
+    if ('Notification' in window && Notification.permission === 'denied') {
+      banner.style.display = 'block';
+      banner.textContent = '⚠️ การแจ้งเตือนของเบราว์เซอร์ถูกบล็อก กดที่ไอคอนกุญแจ/ตั้งค่าเว็บไซต์เพื่อเปิดอนุญาตการแจ้งเตือน (เสียงและข้อความในแอปยังทำงานปกติ)';
+    } else {
+      banner.style.display = 'none';
     }
   }
 
-  function showBrowserNotification(count) {
+  function showBrowserNotification(freshCases) {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    new Notification('Sandsea IT - มีเคสใหม่', {
-      body: 'มีพนักงานแจ้งปัญหาเข้ามา ' + count + ' เคส กดเพื่อเปิดดู'
-    });
+    const count = freshCases.length;
+    const body = count === 1
+      ? (freshCases[0].Category || 'ปัญหาใหม่') + ' · ' + (freshCases[0].Reporter_Name || '')
+      : 'มีพนักงานแจ้งปัญหาเข้ามา ' + count + ' เคส กดเพื่อเปิดดู';
+    const n = new Notification('Sandsea IT - มีเคสใหม่', { body, tag: 'sandsea-new-case' });
+    n.onclick = () => { window.focus(); n.close(); };
   }
 
   function playNotificationSound() {
