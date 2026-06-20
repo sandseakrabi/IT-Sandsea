@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -650,6 +649,9 @@
 
         <div class="panel" id="panel-cases">
           <div id="notifyPermBanner" style="display:none; background:#fff4e5; color:#8a5300; border:1px solid #ffd699; border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:13px; line-height:1.5;"></div>
+          <div style="margin-bottom:12px;">
+            <button id="diagnosePushBtn" type="button" style="background:#eef2f7; color:#33475b; border:1px solid #ccd6e0; border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer;">🔍 ตรวจสอบสถานะการแจ้งเตือน (Push)</button>
+          </div>
           <div class="filter-bar" id="caseFilterBar">
             <div class="filter-chip active" data-filter="all">ทั้งหมด</div>
             <div class="filter-chip" data-filter="New">ใหม่</div>
@@ -664,6 +666,22 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- ===================================================================
+       กล่อง Diagnostic สำหรับเช็คสถานะ Push Notification
+       ทำไมต้องมี: การ debug ปัญหา push บนมือถือยากมาก เพราะเปิด browser
+       console บนมือถือทำได้ลำบาก กล่องนี้รวบรวมข้อมูลสำคัญทุกจุดมาแสดง
+       เป็นข้อความอ่านง่ายบนหน้าจอโดยตรง ไม่ต้องต่อสาย USB หรือใช้ remote
+       debugging ใดๆ
+  =================================================================== -->
+  <div id="diagnoseModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center; padding:16px;">
+    <div style="background:#fff; border-radius:12px; padding:20px; max-width:480px; width:100%; max-height:85vh; overflow-y:auto; font-size:13px; line-height:1.6;">
+      <h3 style="margin-top:0;">ผลตรวจสอบสถานะ Push</h3>
+      <pre id="diagnoseOutput" style="white-space:pre-wrap; word-break:break-all; background:#f5f5f5; padding:10px; border-radius:8px; font-family:monospace; font-size:12px;">กำลังตรวจสอบ...</pre>
+      <button id="diagnoseCloseBtn" type="button" style="margin-top:12px; width:100%; background:#1a3a52; color:#fff; border:none; border-radius:8px; padding:10px; font-size:14px; cursor:pointer;">ปิด</button>
+    </div>
+  </div>
+
 
 <script src="config.js"></script>
 <script>
@@ -1429,6 +1447,145 @@
     }
     return outputArray;
   }
+
+  // ===================================================================
+  // ส่วนที่ 12.6: เครื่องมือ Diagnostic — ตรวจสอบสถานะ Push บนเครื่องนี้
+  // -------------------------------------------------------------------
+  // ทำไมต้องมี: ปัญหา push บนมือถือ (โดยเฉพาะ Android ที่ติดตั้งเป็น PWA)
+  // debug ผ่าน remote console ยากมากสำหรับผู้ใช้ทั่วไป เครื่องมือนี้รวบรวม
+  // ทุกจุดที่อาจพังมาแสดงเป็นข้อความบนหน้าจอโดยตรง ครอบคลุม:
+  // 1. Permission state ของ Notification API บนเครื่องนี้
+  // 2. Service Worker registration state (active/installing/none)
+  // 3. Subscription ปัจจุบัน (ถ้ามี) — endpoint, และเทียบ key ที่ใช้ตอน
+  //    subscribe กับ VAPID_PUBLIC_KEY ที่ฝังอยู่ใน index.html ตอนนี้ ว่าตรงกัน
+  //    หรือไม่ (ถ้าไม่ตรง = subscription นี้ "ค้าง" จากคีย์เก่า ใช้ไม่ได้แล้ว
+  //    แต่ getSubscription() จะยังคืนค่ามันกลับมาเหมือนใช้ได้ตามปกติ เพราะ
+  //    spec ของ Push API ไม่มีกลไกตรวจสอบว่าคีย์ที่ subscribe ไว้ตรงกับคีย์
+  //    ปัจจุบันหรือไม่ ต้องเทียบเองด้วยมือเท่านั้น)
+  // 4. ผลการพยายามส่ง subscription ปัจจุบันไปบันทึกที่ Apps Script ใหม่อีกรอบ
+  // ===================================================================
+  async function diagnosePushStatus() {
+    const lines = [];
+    const now = new Date().toLocaleString('th-TH');
+    lines.push('เวลาที่ตรวจสอบ: ' + now);
+    lines.push('');
+
+    // 1. ตรวจสอบ permission
+    if (!('Notification' in window)) {
+      lines.push('❌ เบราว์เซอร์นี้ไม่รองรับ Notification API เลย');
+    } else {
+      lines.push('Notification permission: ' + Notification.permission);
+    }
+
+    // 2. ตรวจสอบ Service Worker
+    if (!('serviceWorker' in navigator)) {
+      lines.push('❌ เบราว์เซอร์นี้ไม่รองรับ Service Worker เลย');
+      renderDiagnoseResult(lines.join('\n'));
+      return;
+    }
+
+    let reg;
+    try {
+      reg = await navigator.serviceWorker.ready;
+      lines.push('✅ Service Worker active: ' + (reg.active ? reg.active.scriptURL : '(ไม่มี active worker)'));
+    } catch (err) {
+      lines.push('❌ Service Worker ไม่พร้อมใช้งาน: ' + err.message);
+      renderDiagnoseResult(lines.join('\n'));
+      return;
+    }
+
+    // 3. ตรวจสอบ PushManager รองรับไหม
+    if (!('PushManager' in window)) {
+      lines.push('❌ เบราว์เซอร์นี้ไม่รองรับ PushManager เลย (ไม่สามารถรับ push ได้)');
+      renderDiagnoseResult(lines.join('\n'));
+      return;
+    }
+
+    // 4. ดึง subscription ปัจจุบัน (ถ้ามี)
+    let sub;
+    try {
+      sub = await reg.pushManager.getSubscription();
+    } catch (err) {
+      lines.push('❌ getSubscription() ล้มเหลว: ' + err.message);
+      renderDiagnoseResult(lines.join('\n'));
+      return;
+    }
+
+    if (!sub) {
+      lines.push('⚠️ ยังไม่มี push subscription บนเครื่องนี้เลย');
+      lines.push('');
+      lines.push('กำลังลองสมัครใหม่ให้อัตโนมัติ...');
+      renderDiagnoseResult(lines.join('\n'));
+      try {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+        });
+        lines.push('✅ สมัครสำเร็จ endpoint ใหม่: ' + sub.endpoint.substring(0, 60) + '...');
+      } catch (err) {
+        lines.push('❌ สมัครไม่สำเร็จ: ' + err.name + ' — ' + err.message);
+        renderDiagnoseResult(lines.join('\n'));
+        return;
+      }
+    } else {
+      lines.push('✅ มี subscription อยู่แล้ว');
+      lines.push('Endpoint: ' + sub.endpoint.substring(0, 70) + '...');
+    }
+
+    // 5. เทียบ key ที่ subscription นี้ใช้ กับ VAPID_PUBLIC_KEY ปัจจุบันในไฟล์
+    // ทำไมต้องเทียบ: ถ้าเครื่องนี้เคย subscribe ไว้ตอนที่ index.html ยังใช้
+    // public key อันเก่า (ก่อนเปลี่ยนคู่กุญแจ) getSubscription() จะยังคืนค่า
+    // subscription เก่านั้นกลับมาเหมือนใช้งานได้ปกติทุกประการ ทั้งที่จริงๆ
+    // private key ฝั่ง Apps Script ไม่ตรงกับ public key ที่ subscription นี้ผูกไว้
+    // แล้วเซิร์ฟเวอร์จะเซ็น JWT ผิดคีย์ ทำให้ Push Service ปฏิเสธ request เงียบๆ
+    try {
+      const subKeyBuf = sub.options && sub.options.applicationServerKey
+        ? new Uint8Array(sub.options.applicationServerKey)
+        : null;
+      if (subKeyBuf) {
+        const subKeyB64 = btoa(String.fromCharCode(...subKeyBuf)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        const matches = subKeyB64 === VAPID_PUBLIC_KEY;
+        lines.push('');
+        lines.push(matches ? '✅ Public key ของ subscription นี้ตรงกับ VAPID_PUBLIC_KEY ปัจจุบัน' : '❌ Public key ของ subscription นี้ "ไม่ตรง" กับ VAPID_PUBLIC_KEY ปัจจุบันในไฟล์! (เป็น subscription ค้างจากคีย์เก่า ต้อง unsubscribe แล้วสมัครใหม่)');
+        if (!matches) {
+          lines.push('   key เก่าของ subscription: ' + subKeyB64);
+          lines.push('   key ปัจจุบันในไฟล์:        ' + VAPID_PUBLIC_KEY);
+        }
+      } else {
+        lines.push('⚠️ ไม่สามารถอ่าน applicationServerKey ของ subscription นี้ได้ (เบราว์เซอร์บางตัวไม่ expose ค่านี้ผ่าน .options)');
+      }
+    } catch (err) {
+      lines.push('⚠️ เทียบ key ไม่สำเร็จ: ' + err.message);
+    }
+
+    renderDiagnoseResult(lines.join('\n'));
+
+    // 6. ลองส่ง subscription ปัจจุบันไปบันทึกที่ Apps Script ใหม่อีกรอบ พร้อมโชว์ผลจริง
+    lines.push('');
+    lines.push('กำลังส่งไปบันทึกที่เซิร์ฟเวอร์...');
+    renderDiagnoseResult(lines.join('\n'));
+    try {
+      await apiPost('saveSubscription', { subscription: sub.toJSON() });
+      lines.push('✅ บันทึกที่เซิร์ฟเวอร์สำเร็จ — ลองให้พนักงานแจ้งเคสใหม่แล้วดูว่า push ขึ้นไหม');
+    } catch (err) {
+      lines.push('❌ บันทึกที่เซิร์ฟเวอร์ล้มเหลว: ' + err.message);
+    }
+    renderDiagnoseResult(lines.join('\n'));
+  }
+
+  function renderDiagnoseResult(text) {
+    document.getElementById('diagnoseOutput').textContent = text;
+  }
+
+  document.getElementById('diagnosePushBtn').addEventListener('click', () => {
+    document.getElementById('diagnoseModal').style.display = 'flex';
+    renderDiagnoseResult('กำลังตรวจสอบ...');
+    diagnosePushStatus();
+  });
+
+  document.getElementById('diagnoseCloseBtn').addEventListener('click', () => {
+    document.getElementById('diagnoseModal').style.display = 'none';
+  });
 
   /**
    * โชว์ข้อความเตือนตรงๆ ถ้า browser notification ถูกบล็อก
