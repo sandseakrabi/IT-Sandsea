@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -406,6 +407,8 @@
   }
   .filter-chip, .pill { min-height: 0; }
 </style>
+<!-- ใช้วาดกราฟแนวโน้ม uptime AP/CCTV ในแท็บภาพรวม โหลดจาก CDN ไม่ต้องติดตั้งอะไรเพิ่ม -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -557,6 +560,11 @@
 
         <div class="panel active" id="panel-dashboard">
           <div class="summary-grid" id="summaryGrid"></div>
+          <div class="card">
+            <h3>แนวโน้ม Uptime 14 วันล่าสุด</h3>
+            <p style="font-size:13px; color:var(--muted); margin:-6px 0 14px;">ดูได้ว่าช่วงไหนมีปัญหาบ่อย ไม่ใช่แค่ตัวเลขวันล่าสุด</p>
+            <canvas id="trendChart" height="180"></canvas>
+          </div>
           <div class="card">
             <h3>สรุป CCTV วันล่าสุด</h3>
             <table class="log-table" id="dashCctvTable"><tbody></tbody></table>
@@ -911,9 +919,20 @@
 
   // ===================================================================
   // ส่วนที่ 4: หน้า IT — Password Gate
-  // วิธีเปลี่ยนรหัสผ่าน: แก้ค่า DASHBOARD_PASSWORD ด้านล่างนี้ตรงๆ
+  // ทำไมไม่มี DASHBOARD_PASSWORD ฝังในไฟล์นี้แล้ว: เดิมรหัสผ่านเก็บเป็นข้อความ
+  // ล้วนๆตรงนี้ ใครกด "View Source" ดูไฟล์นี้ก็เห็นรหัสผ่านได้ทันที และที่ร้ายกว่า
+  // คือ Code.gs (server) ไม่ได้เช็คอะไรเลย ทำให้ใครมี Web App URL ก็เรียกข้าม
+  // หน้า login ไปได้เลยโดยไม่ต้องรู้รหัสผ่าน ตอนนี้รหัสผ่านจริงเก็บไว้ใน Apps
+  // Script Properties (ตั้งครั้งเดียวด้วย setupDashboardKey() ใน Code.gs) ส่วน
+  // หน้าเว็บนี้แค่ "ส่งรหัสที่กรอกไปให้ server เช็ค" เท่านั้น ไม่มีการเทียบค่าเองเลย
+  //
+  // วิธีเปลี่ยนรหัสผ่าน: ไปแก้และรัน setupDashboardKey() ใน Apps Script editor
+  // (ดูคำอธิบายในฟังก์ชันนั้น) ไม่ต้องแก้ไฟล์นี้อีกต่อไป
   // ===================================================================
-  const DASHBOARD_PASSWORD = 'sandsea2026';
+
+  // กุญแจที่ใช้แนบไปกับทุก request หา Apps Script (ดู checkAuth_ ใน Code.gs)
+  // เก็บไว้ใน sessionStorage เพื่อให้ไม่ต้อง login ซ้ำถ้ายังไม่ปิดแท็บ/เบราว์เซอร์
+  let currentApiKey = sessionStorage.getItem('sandsea_it_key') || '';
 
   // ===================================================================
   // กุญแจ VAPID (Public Key เท่านั้น) — ใช้ตอนขอลงทะเบียนรับ Push Notification
@@ -928,12 +947,26 @@
   const loginBtn = document.getElementById('loginBtn');
   const loginError = document.getElementById('loginError');
 
-  function tryLogin() {
-    if (passwordInput.value === DASHBOARD_PASSWORD) {
-      sessionStorage.setItem('sandsea_it_authed', 'true');
+  // ทำไมต้องเป็น async แบบนี้: ต้องรอผลตอบจาก server (apiGet) ก่อนถึงจะรู้ว่า
+  // รหัสผ่านถูกหรือผิด ไม่สามารถเช็คได้ทันทีในเบราว์เซอร์แบบเดิมอีกต่อไป
+  // (ตั้งใจให้เป็นแบบนี้ เพราะรหัสผ่านจริงไม่ได้อยู่ในเบราว์เซอร์แล้ว)
+  async function tryLogin() {
+    const enteredKey = passwordInput.value;
+    currentApiKey = enteredKey; // ตั้งไว้ก่อนเรียก เพื่อให้ apiGet แนบไปด้วยตอนเช็ค
+    loginError.style.display = 'none';
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'กำลังตรวจสอบ...';
+
+    try {
+      await apiGet('getConfig'); // ขอข้อมูลอะไรก็ได้ที่ต้องผ่าน checkAuth_ ฝั่ง server
+      sessionStorage.setItem('sandsea_it_key', enteredKey);
       showItApp();
-    } else {
+    } catch (err) {
+      currentApiKey = ''; // รหัสผิด เคลียร์ทิ้ง ไม่ให้เอาไปใช้ต่อ
       loginError.style.display = 'block';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'เข้าสู่ระบบ';
     }
   }
 
@@ -961,9 +994,9 @@
     }
   }
 
-  // ถ้ากดเข้าหน้า IT แล้ว login ไว้แล้วในเซสชันนี้ ให้ข้ามไปหน้าแอปเลย
+  // ถ้ากดเข้าหน้า IT แล้ว login ไว้แล้วในเซสชันนี้ (มีกุญแจเก็บไว้) ให้ข้ามไปหน้าแอปเลย
   document.getElementById('goItBtn').addEventListener('click', () => {
-    if (sessionStorage.getItem('sandsea_it_authed') === 'true') {
+    if (currentApiKey) {
       showItApp();
     }
   });
@@ -978,7 +1011,7 @@
   let itAppInitialized = false;
 
   async function apiGet(action, params) {
-    let url = APPS_SCRIPT_URL + '?action=' + action;
+    let url = APPS_SCRIPT_URL + '?action=' + action + '&key=' + encodeURIComponent(currentApiKey);
     if (params) {
       Object.keys(params).forEach(key => { url += '&' + key + '=' + encodeURIComponent(params[key]); });
     }
@@ -992,7 +1025,7 @@
     const res = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action, ...body })
+      body: JSON.stringify({ action, key: currentApiKey, ...body })
     });
     const json = await res.json();
     if (!json.success) throw new Error(json.error);
@@ -1092,6 +1125,68 @@
     cctvBody.innerHTML = summary.latestCCTV.length
       ? summary.latestCCTV.map(c => `<tr><td>${c.NVR_Name}</td><td>${c.Online} online</td><td>${c.Offline} offline</td><td>${c.Note || '-'}</td></tr>`).join('')
       : '<tr><td colspan="4" class="empty-state">ยังไม่มีข้อมูล CCTV</td></tr>';
+
+    // โหลดข้อมูลกราฟแนวโน้มแยกต่างหาก ครอบ try/catch เพราะกราฟเป็นแค่ของเสริม
+    // ถ้าดึงข้อมูลกราฟพลาด ไม่ควรทำให้การ์ดสรุปด้านบน (ส่วนสำคัญกว่า) แสดงผลไม่ได้ไปด้วย
+    try {
+      const [apTrend, cctvTrend] = await Promise.all([
+        apiGet('getApTrend', { days: 14 }),
+        apiGet('getCctvTrend', { days: 14 })
+      ]);
+      renderTrendChart(apTrend, cctvTrend);
+    } catch (err) {
+      console.error('โหลดกราฟแนวโน้มไม่สำเร็จ: ' + err.message);
+    }
+  }
+
+  let trendChartInstance = null;
+
+  /**
+   * วาดกราฟเส้นแนวโน้ม uptime % ของ AP และ CCTV รวมในกราฟเดียวกัน
+   * ทำไมต้องเก็บ trendChartInstance ไว้แล้วเช็คก่อนสร้างใหม่ทุกครั้ง: ถ้าเรียก
+   * new Chart() ซ้ำบน canvas เดิมโดยไม่ destroy() ตัวเก่าก่อน Chart.js จะวาด
+   * กราฟใหม่ทับซ้อนของเก่า (memory leak และเห็นกราฟเพี้ยน) เพราะ dashboard
+   * รีโหลดข้อมูลทุกครั้งที่ refresh หรือ polling มาถึง ไม่ใช่แค่ตอนเปิดหน้าครั้งแรก
+   */
+  function renderTrendChart(apTrend, cctvTrend) {
+    const ctx = document.getElementById('trendChart');
+    if (!ctx) return;
+
+    // รวมวันที่จากทั้ง AP และ CCTV (เผื่อบางวันมีแค่ AP หรือแค่ CCTV)
+    const allDates = Array.from(new Set([...apTrend.map(r => r.date), ...cctvTrend.map(r => r.date)])).sort();
+    const apMap = Object.fromEntries(apTrend.map(r => [r.date, r.uptimePercent]));
+    const cctvMap = Object.fromEntries(cctvTrend.map(r => [r.date, r.uptimePercent]));
+
+    if (trendChartInstance) trendChartInstance.destroy();
+    trendChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: allDates,
+        datasets: [
+          {
+            label: 'AP / Wifi uptime %',
+            data: allDates.map(d => apMap[d] !== undefined ? apMap[d] : null),
+            borderColor: '#0F3B57',
+            backgroundColor: 'rgba(15,59,87,0.08)',
+            spanGaps: true,
+            tension: 0.25
+          },
+          {
+            label: 'CCTV uptime %',
+            data: allDates.map(d => cctvMap[d] !== undefined ? cctvMap[d] : null),
+            borderColor: '#C97B2E',
+            backgroundColor: 'rgba(201,123,46,0.08)',
+            spanGaps: true,
+            tension: 0.25
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: { y: { min: 0, max: 100, ticks: { callback: v => v + '%' } } },
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
   }
 
   function cardHtml(label, value, statusClass, detail) {
