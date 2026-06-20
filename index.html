@@ -561,6 +561,21 @@
             <h3>สรุป CCTV วันล่าสุด</h3>
             <table class="log-table" id="dashCctvTable"><tbody></tbody></table>
           </div>
+          <div class="card">
+            <h3>Export Report</h3>
+            <p style="font-size:13px; color:var(--muted); margin:-6px 0 14px;">ออกรายงานสรุป AP, CCTV, Backup และเคสปัญหา เป็นไฟล์ PDF รายเดือน</p>
+            <div class="row2" style="margin-bottom:14px;">
+              <div class="field">
+                <label>เดือน</label>
+                <select id="reportMonth"></select>
+              </div>
+              <div class="field">
+                <label>ปี</label>
+                <select id="reportYear"></select>
+              </div>
+            </div>
+            <button type="button" class="btn btn-primary" id="exportReportBtn" style="width:100%;">📄 Export Report (PDF)</button>
+          </div>
         </div>
 
         <div class="panel" id="panel-ap">
@@ -1086,6 +1101,51 @@
       <div class="detail">${detail}</div>
     </div>`;
   }
+
+  // ===================================================================
+  // ส่วนที่ 7.5: หน้า IT — Export Report (PDF รายเดือน)
+  // ===================================================================
+  const THAI_MONTH_NAMES = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+
+  function setupReportPicker() {
+    const now = new Date();
+    const monthSelect = document.getElementById('reportMonth');
+    const yearSelect = document.getElementById('reportYear');
+
+    monthSelect.innerHTML = THAI_MONTH_NAMES.map((name, i) =>
+      `<option value="${i + 1}">${name}</option>`
+    ).join('');
+    monthSelect.value = now.getMonth() + 1;
+
+    // ให้เลือกย้อนหลังได้ 12 เดือน ถึงปีปัจจุบัน (เผื่อ IT มาออกรายงานเดือนก่อนหน้าย้อนหลัง)
+    const currentYear = now.getFullYear();
+    const years = [currentYear, currentYear - 1];
+    yearSelect.innerHTML = years.map(y =>
+      `<option value="${y}">${y + 543} (${y})</option>`
+    ).join('');
+    yearSelect.value = currentYear;
+  }
+
+  document.getElementById('exportReportBtn').addEventListener('click', async (e) => {
+    const btn = e.target;
+    const month = document.getElementById('reportMonth').value;
+    const year = document.getElementById('reportYear').value;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'กำลังสร้างรายงาน...';
+    try {
+      const result = await apiGet('exportMonthlyReport', { year, month });
+      showToast(result.message);
+      window.open(result.url, '_blank');
+    } catch (err) {
+      showToast('สร้างรายงานไม่สำเร็จ: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
+
+  setupReportPicker();
 
   // ===================================================================
   // ส่วนที่ 8: หน้า IT — AP / Wifi
