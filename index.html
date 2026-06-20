@@ -1136,7 +1136,7 @@
     try {
       const result = await apiGet('exportMonthlyReport', { year, month });
       showToast(result.message);
-      window.open(result.url, '_blank');
+      window.open(result.downloadUrl, '_blank');
     } catch (err) {
       showToast('สร้างรายงานไม่สำเร็จ: ' + err.message);
     } finally {
