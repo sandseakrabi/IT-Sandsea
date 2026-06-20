@@ -12,4 +12,4 @@
  * 2. เอา URL นั้นมาวางแทนค่าด้านล่างนี้ (อยู่ในเครื่องหมายคำพูดเดิม)
  */
 
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzFTQjxC8THhHdDkLPg9lyYMXUJIIbPw_bGx6P7HTNf3lMhVkHsd44qHqV963BNaGLp/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyfSxYGduBRJEOpPc7Vknn2V2H7OtrA3I4zbu2nOCQn16LhfYsLTebIU5Xu7GuiH8NR/exec';
