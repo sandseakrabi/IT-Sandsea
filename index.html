@@ -747,7 +747,18 @@
   document.getElementById('goItBtn').addEventListener('click', () => showScreen('itScreen'));
   document.getElementById('staffBackLink').addEventListener('click', () => showScreen('roleScreen'));
   document.getElementById('itBackLinkFromLogin').addEventListener('click', () => showScreen('roleScreen'));
-  document.getElementById('itBackLinkFromApp').addEventListener('click', () => showScreen('roleScreen'));
+  document.getElementById('itBackLinkFromApp').addEventListener('click', () => {
+    // ทำไมต้องหยุด polling ตรงนี้: ถ้าไม่หยุด setInterval ของ checkNewCases
+    // (ตั้งไว้ตอน startPolling ในหน้า IT) จะยังรันต่อเนื่องอยู่เบื้องหลังแม้
+    // ผู้ใช้กดออกจากหน้า IT ไปแล้ว เพราะทั้ง 3 หน้าจอ (เลือกบทบาท, พนักงาน, IT)
+    // อยู่ใน JavaScript ไฟล์เดียวกัน การ "เปลี่ยนหน้าจอ" คือแค่ซ่อน/โชว์
+    // ด้วย CSS เท่านั้น ไม่ได้โหลดหน้าใหม่หรือล้าง memory ใดๆ ถ้าไม่ clear
+    // เองตรงๆ ผู้ใช้ที่เคย login เข้า IT แล้วกลับมาที่หน้าแจ้งปัญหาของพนักงาน
+    // จะยังเห็น toast "มีเคสใหม่เข้ามา" โผล่ขึ้นมาเรื่อยๆ ทั้งที่ไม่ได้อยู่
+    // หน้า IT แล้ว ซึ่งทำให้สับสนและดูเหมือนระบบรั่วข้อมูลข้ามสิทธิ์การเข้าถึง
+    stopPolling();
+    showScreen('roleScreen');
+  });
 
   // ===================================================================
   // ส่วนที่ 1: หน้าพนักงาน — จัดการหมวดปัญหา
@@ -917,7 +928,22 @@
   function showItApp() {
     itLoginScreen.style.display = 'none';
     itAppScreen.style.display = 'block';
-    if (!itAppInitialized) initItApp();
+    // ทำไมต้องแยกเป็น 2 เงื่อนไข (ไม่ใช่แค่ if (!itAppInitialized) เหมือนเดิม):
+    // initItApp() ทำ 2 อย่างปนกัน คือ "โหลดข้อมูลตั้งต้น/ตั้งค่า UI ครั้งแรก"
+    // (ควรรันแค่ครั้งเดียวต่อเซสชัน ไม่ต้องโหลดซ้ำทุกครั้งที่กลับเข้ามา) และ
+    // "เริ่ม polling" (ต้องเริ่มใหม่ทุกครั้งที่กลับเข้าหน้า IT เพราะ stopPolling()
+    // ถูกเรียกตอนกดออกไปแล้ว ถ้าไม่เริ่มใหม่ตรงนี้ ผู้ใช้ที่ออกแล้วกลับเข้ามา
+    // ใหม่ในเซสชันเดียวกันจะไม่ได้รับการแจ้งเตือนเคสใหม่อีกเลย)
+    if (!itAppInitialized) {
+      initItApp();
+    } else if (!_pollReady) {
+      // เคย init แอปไปแล้วก่อนหน้า แต่ polling ถูกหยุดไว้ตอนออกจากหน้า —
+      // รีเฟรชรายการเคสล่าสุดก่อน แล้วค่อยเริ่ม polling ใหม่ เพื่อให้
+      // _seenIds ตรงกับสถานะปัจจุบันจริง ไม่ใช้ข้อมูลเก่าตอนออกจากหน้าครั้งก่อน
+      loadAllData().then(startPolling).catch((err) => {
+        showToast('โหลดข้อมูลไม่สำเร็จ: ' + err.message);
+      });
+    }
   }
 
   // ถ้ากดเข้าหน้า IT แล้ว login ไว้แล้วในเซสชันนี้ ให้ข้ามไปหน้าแอปเลย
@@ -1306,6 +1332,29 @@
     pollTimer = _notifyTimer; // คงชื่อเดิมไว้เผื่อมีโค้ดอื่นอ้างถึง pollTimer
 
     setupResumeListeners();
+  }
+
+  /**
+   * หยุด polling ทั้งหมดและล้างสถานะให้สะอาด — เรียกตอนผู้ใช้กดออกจากหน้า IT
+   * ทำไมต้องรีเซ็ต _pollReady และ _seenIds เป็นค่าเริ่มต้นด้วย (ไม่ใช่แค่
+   * clearInterval เฉยๆ): checkNewCases() เช็ค _pollReady ก่อนทำงานทุกครั้ง
+   * (บรรทัดแรกของฟังก์ชัน) ถ้าเหลือ event listener ตัวไหนหลุดรอดไปเรียก
+   * checkNewCases() อยู่ (เช่น click listener ที่ผูกกับ document ทั้งหน้า)
+   * การตั้ง _pollReady = false จะเป็นเกราะป้องกันชั้นที่สอง ทำให้ฟังก์ชัน
+   * ออกจากการทำงานทันทีโดยไม่ทำอะไรต่อ แม้จะถูกเรียกพลาดมาก็ตาม ส่วน
+   * _seenIds ต้องเคลียร์เป็น null เพื่อให้ตอนกลับเข้าหน้า IT ใหม่ในอนาคต
+   * startPolling() คำนวณรายการเคส "ที่เคยเห็นแล้ว" ใหม่จากของจริงตอนนั้น
+   * ไม่ใช้ของเก่าที่อาจไม่ตรงกับสถานะปัจจุบันแล้ว
+   */
+  function stopPolling() {
+    if (_notifyTimer) {
+      clearInterval(_notifyTimer);
+      _notifyTimer = null;
+      pollTimer = null;
+    }
+    _pollReady = false;
+    _seenIds = null;
+    console.log('[Poll] หยุด polling แล้ว (ออกจากหน้า IT)');
   }
 
   /**
