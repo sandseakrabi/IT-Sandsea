@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="th">
 <head>
@@ -370,6 +369,19 @@
   .case-card .photo-link { font-size: 13px; color: var(--ocean); }
   .case-card .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   .case-card select { width: auto; padding: 8px 10px; font-size: 13px; }
+
+  /* ประวัติใบงาน */
+  .history-section { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .history-toggle { background: none; border: none; color: var(--ocean); font-size: 13px; cursor: pointer; padding: 4px 0; font-weight: 600; }
+  .history-list { display: none; margin-top: 8px; }
+  .history-list.open { display: block; }
+  .history-item { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .history-item:last-child { border-bottom: none; }
+  .history-time { color: var(--muted); min-width: 130px; flex-shrink: 0; }
+  .history-body { flex: 1; }
+  .history-status { font-weight: 700; margin-bottom: 2px; }
+  .history-comment { color: var(--ink); }
+  .history-by { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
   .empty-state { text-align: center; padding: 30px; color: var(--muted); font-size: 14px; }
 
@@ -1397,6 +1409,12 @@
             <input type="text" class="solution-input" placeholder="วิธีแก้ไข (กรอกตอนปิดเคส)" value="${escapeHtml(c.Solution || '')}" style="flex: 1; min-width: 150px;">
             <button class="btn btn-secondary update-case-btn">บันทึก</button>
           </div>
+          <div class="history-section">
+            <button class="history-toggle">ดูประวัติใบงาน</button>
+            <div class="history-list">
+              <div class="history-loading" style="color:var(--muted);font-size:13px;">กำลังโหลด...</div>
+            </div>
+          </div>
         </div>
       `;
     }).join('');
@@ -1419,6 +1437,52 @@
         } finally {
           btn.disabled = false;
           btn.textContent = 'บันทึก';
+        }
+      });
+    });
+
+    // ปุ่ม "ดูประวัติใบงาน" — โหลดประวัติจาก server เมื่อกดครั้งแรก
+    // ทำไมโหลดแบบ lazy (โหลดเมื่อกด ไม่ใช่โหลดพร้อมกันทุกเคส):
+    // ถ้าโหลดประวัติทุกเคสพร้อมกัน จะเรียก API หลายครั้งมากถ้ามีเคสเยอะ
+    // ทำให้หน้าโหลดช้า lazy load ช่วยให้โหลดเฉพาะเคสที่ IT กดดูเท่านั้น
+    container.querySelectorAll('.history-toggle').forEach(btn => {
+      let loaded = false;
+      btn.addEventListener('click', async () => {
+        const cardEl = btn.closest('.case-card');
+        const caseId = cardEl.dataset.caseId;
+        const listEl = cardEl.querySelector('.history-list');
+        listEl.classList.toggle('open');
+
+        // โหลดประวัติจาก server ครั้งแรกที่เปิด (หลังจากนั้นใช้ข้อมูลที่โหลดไว้แล้ว)
+        if (!loaded && listEl.classList.contains('open')) {
+          loaded = true;
+          try {
+            const history = await apiGet('getCaseHistory', { caseId });
+            if (!history || history.length === 0) {
+              listEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:4px 0;">ยังไม่มีประวัติการอัพเดท</div>';
+            } else {
+              listEl.innerHTML = history.map(h => {
+                const statusLabel = h.Status === 'New' ? 'ใหม่'
+                  : h.Status === 'In Progress' ? 'กำลังทำ'
+                  : h.Status === 'Done' ? 'เสร็จแล้ว'
+                  : h.Status || '-';
+                const pillClass = h.Status === 'New' ? 'pill-new'
+                  : h.Status === 'In Progress' ? 'pill-progress'
+                  : 'pill-done';
+                return `
+                  <div class="history-item">
+                    <div class="history-time">${h.Timestamp}</div>
+                    <div class="history-body">
+                      <div class="history-status"><span class="pill ${pillClass}">${statusLabel}</span></div>
+                      ${h.Comment ? `<div class="history-comment">${escapeHtml(h.Comment)}</div>` : ''}
+                      ${h.Changed_By ? `<div class="history-by">โดย: ${escapeHtml(h.Changed_By)}</div>` : ''}
+                    </div>
+                  </div>`;
+              }).join('');
+            }
+          } catch (err) {
+            listEl.innerHTML = '<div style="color:var(--coral);font-size:13px;">โหลดประวัติไม่สำเร็จ: ' + err.message + '</div>';
+          }
         }
       });
     });
