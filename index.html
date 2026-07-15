@@ -1024,6 +1024,8 @@
   let appConfig = {};
   let currentCaseFilter = 'all';
   let allCasesCache = [];
+  let currentCasePage = 1;
+  const CASES_PER_PAGE = 10;
   let pollTimer = null;
   let itAppInitialized = false;
 
@@ -1381,6 +1383,7 @@
       document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
       currentCaseFilter = chip.dataset.filter;
+      currentCasePage = 1;
       renderCaseList();
     });
   });
@@ -1392,9 +1395,17 @@
   }
 
   function renderCaseList() {
+    // กรองเฉพาะเคสของ "เดือนปัจจุบัน" เท่านั้น เทียบจาก Date_Reported (รูปแบบ
+    // "yyyy-MM-dd HH:mm:ss") กับเดือน-ปีปัจจุบันของเครื่อง วิธีนี้กรองแค่ตอน
+    // แสดงผลบนหน้าเว็บเท่านั้น ไม่ได้ลบหรือแตะข้อมูลใน Google Sheet เลย
+    // ข้อมูลเดือนก่อนหน้ายังอยู่ครบในชีต แค่ไม่ถูกดึงมาโชว์ในหน้านี้
+    const now = new Date();
+    const currentYearMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    const thisMonthCases = allCasesCache.filter(c => (c.Date_Reported || '').startsWith(currentYearMonth));
+
     const filtered = currentCaseFilter === 'all'
-      ? allCasesCache
-      : allCasesCache.filter(c => c.Status === currentCaseFilter);
+      ? thisMonthCases
+      : thisMonthCases.filter(c => c.Status === currentCaseFilter);
 
     const container = document.getElementById('caseList');
     if (!filtered.length) {
@@ -1402,13 +1413,25 @@
       return;
     }
 
-    container.innerHTML = filtered.map(c => {
+    // แบ่งหน้า หน้าละ 10 รายการ
+    const totalPages = Math.ceil(filtered.length / CASES_PER_PAGE);
+    if (currentCasePage > totalPages) currentCasePage = totalPages;
+    if (currentCasePage < 1) currentCasePage = 1;
+    const startIdx = (currentCasePage - 1) * CASES_PER_PAGE;
+    const pageItems = filtered.slice(startIdx, startIdx + CASES_PER_PAGE);
+
+    container.innerHTML = pageItems.map(c => {
       const pillClass = c.Status === 'New' ? 'pill-new' : c.Status === 'In Progress' ? 'pill-progress' : 'pill-done';
       const statusLabel = c.Status === 'New' ? 'ใหม่' : c.Status === 'In Progress' ? 'กำลังทำ' : 'เสร็จแล้ว';
       const photoHtml = c.Photo_URL ? `<a class="photo-link" href="${c.Photo_URL}" target="_blank">📷 ดูรูปที่แนบมา</a>` : '';
 
+      // สถานะถัดไปที่ควรเป็น (ใหม่ -> กำลังทำ -> เสร็จแล้ว) ใช้เป็นค่า default
+      // ของ dropdown แทนสถานะปัจจุบัน เพื่อให้ IT พิมพ์คอมเมนต์แล้วกดบันทึกได้เลย
+      // โดยไม่ต้องเปลี่ยน dropdown เอง (ลดโอกาสลืมเปลี่ยนสถานะตอนปิดเคส)
+      const nextStatus = c.Status === 'New' ? 'In Progress' : c.Status === 'In Progress' ? 'Done' : 'Done';
+
       return `
-        <div class="case-card" data-case-id="${c.Case_ID}">
+        <div class="case-card" data-case-id="${c.Case_ID}" data-current-status="${c.Status}">
           <div class="top-row">
             <div>
               <div class="case-id">${c.Case_ID} · ${c.Category}</div>
@@ -1420,9 +1443,9 @@
           ${photoHtml}
           <div class="actions">
             <select class="status-select">
-              <option value="New" ${c.Status === 'New' ? 'selected' : ''}>ใหม่</option>
-              <option value="In Progress" ${c.Status === 'In Progress' ? 'selected' : ''}>กำลังทำ</option>
-              <option value="Done" ${c.Status === 'Done' ? 'selected' : ''}>เสร็จแล้ว</option>
+              <option value="New" ${nextStatus === 'New' ? 'selected' : ''}>ใหม่</option>
+              <option value="In Progress" ${nextStatus === 'In Progress' ? 'selected' : ''}>กำลังทำ</option>
+              <option value="Done" ${nextStatus === 'Done' ? 'selected' : ''}>เสร็จแล้ว</option>
             </select>
             <input type="text" class="solution-input" placeholder="วิธีแก้ไข (กรอกตอนปิดเคส)" value="${escapeHtml(c.Solution || '')}" style="flex: 1; min-width: 150px;">
             <button class="btn btn-secondary update-case-btn">บันทึก</button>
@@ -1435,14 +1458,30 @@
           </div>
         </div>
       `;
-    }).join('');
+    }).join('') + renderCasePagination(totalPages);
+
+    container.querySelectorAll('.page-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentCasePage = Number(btn.dataset.page);
+        renderCaseList();
+      });
+    });
 
     container.querySelectorAll('.update-case-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const cardEl = e.target.closest('.case-card');
         const caseId = cardEl.dataset.caseId;
+        const currentStatus = cardEl.dataset.currentStatus;
         const status = cardEl.querySelector('.status-select').value;
         const solution = cardEl.querySelector('.solution-input').value;
+
+        // ถ้าสถานะที่เลือกอยู่ตรงกับสถานะปัจจุบัน (ที่บันทึกไปแล้วล่าสุด)
+        // ให้เตือนถามยืนยันก่อน กันเผลอบันทึกซ้ำสถานะเดิมโดยไม่ตั้งใจ
+        if (status === currentStatus) {
+          const confirmed = confirm('สถานะ "' + caseStatusLabel(status) + '" นี้ถูกบันทึกไปแล้วล่าสุด ยืนยันบันทึกซ้ำอีกครั้งหรือไม่?');
+          if (!confirmed) return;
+        }
+
         btn.disabled = true;
         btn.textContent = 'กำลังบันทึก...';
         try {
@@ -1510,6 +1549,26 @@
     const div = document.createElement('div');
     div.textContent = text || '';
     return div.innerHTML;
+  }
+
+  function caseStatusLabel(status) {
+    return status === 'New' ? 'ใหม่' : status === 'In Progress' ? 'กำลังทำ' : 'เสร็จแล้ว';
+  }
+
+  // สร้างแถบปุ่มเลขหน้า (1 2 3 ...) ใต้รายการเคส ถ้ามีแค่หน้าเดียวไม่ต้องแสดงเลย
+  function renderCasePagination(totalPages) {
+    if (totalPages <= 1) return '';
+    let buttons = '';
+    for (let p = 1; p <= totalPages; p++) {
+      const isActive = p === currentCasePage;
+      buttons += `<button type="button" class="page-btn" data-page="${p}"
+        style="padding:6px 12px; border-radius:6px; border:1px solid var(--border);
+        background:${isActive ? 'var(--ocean)' : '#fff'};
+        color:${isActive ? '#fff' : 'var(--deep-sea)'};
+        font-weight:${isActive ? '700' : '400'};
+        cursor:pointer; font-size:13px;">${p}</button>`;
+    }
+    return `<div class="case-pagination" style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin-top:16px;">${buttons}</div>`;
   }
 
   function updateCaseBadge() {
