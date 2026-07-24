@@ -294,28 +294,81 @@
 
   .header {
     background: var(--deep-sea); color: var(--white); padding: 16px 20px;
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 20;
   }
   .header h1 { font-size: 17px; margin: 0; font-weight: 700; }
   .header .sub { font-size: 12px; opacity: 0.7; }
 
-  .tabs {
-    display: flex; background: var(--white); border-bottom: 1px solid var(--border);
-    overflow-x: auto; position: sticky; top: 0; z-index: 10;
+  /* ===================================================================
+     ปุ่มเปิดเมนู (hamburger) — อยู่หัวมุมซ้ายของ header เสมอ กดแล้วเปิด sidebar
+     ทำไมทำพื้นหลังโปร่งแสง: ให้เห็นชัดบนพื้นเข้มของ header โดยไม่ต้องพึ่งไอคอน
+     จากภายนอก และขนาด 42px เผื่อพื้นที่กดง่ายด้วยนิ้วบนมือถือ
+     =================================================================== */
+  .menu-toggle {
+    background: rgba(255,255,255,0.14); border: none; color: var(--white);
+    font-size: 19px; width: 42px; height: 42px; min-height: 42px; border-radius: 10px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .menu-toggle:active { background: rgba(255,255,255,0.26); }
+
+  /* ===================================================================
+     พื้นหลังมัวๆ ด้านหลัง sidebar ตอนเปิดเมนู — กดตรงไหนบนพื้นนี้ก็ปิดเมนูได้
+     ทำไมต้องมี: บอกชัดเจนว่ากำลังอยู่ในโหมด "เมนูเปิดอยู่" และกันพลาดไม่ให้
+     เผลอกดโดนเนื้อหาที่ซ่อนอยู่ข้างหลังระหว่างเมนูเปิดค้าง
+     =================================================================== */
+  .sidebar-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,59,87,0.45); z-index: 55;
+  }
+  .sidebar-overlay.show { display: block; }
+
+  /* ===================================================================
+     แถบเมนูด้านซ้าย (sidebar) แทนแถบแท็บแนวนอนเดิม
+     ทำไมซ่อนไว้นอกจอด้วย transform แทน display:none: อยากได้ภาพเลื่อนเข้า/ออก
+     ลื่นๆตอนเปิด-ปิด (transition) ถ้าใช้ display:none จะโผล่/หายทันที ดูกระตุก
+     ทำไมใช้ position:fixed เหมือนกันทั้งมือถือและเดสก์ท็อป: พฤติกรรมเดียวกัน
+     ทุกขนาดจอ กดปุ่มเดียวกันเสมอ ไม่ต้องจำว่าจอไหนทำงานต่างกันยังไง
+     =================================================================== */
+  .sidebar {
+    position: fixed; top: 0; left: 0; width: 260px; height: 100dvh;
+    background: var(--white); z-index: 60; transform: translateX(-100%);
+    transition: transform 0.25s ease; display: flex; flex-direction: column;
+    overflow-y: auto; box-shadow: 6px 0 28px rgba(15,59,87,0.18);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .sidebar-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 16px; background: var(--deep-sea); color: var(--white);
+    padding-top: calc(18px + env(safe-area-inset-top)); flex-shrink: 0;
+  }
+  .sidebar-head .brand { display: flex; align-items: center; gap: 10px; }
+  .sidebar-head .brand img { width: 30px; height: 30px; border-radius: 8px; display: block; }
+  .sidebar-head .brand span { font-size: 15px; font-weight: 700; }
+  .sidebar-close {
+    background: rgba(255,255,255,0.12); border: none; color: var(--white); font-size: 17px;
+    cursor: pointer; width: 34px; height: 34px; min-height: 34px; border-radius: 8px;
   }
 
+  .tabs { display: flex; flex-direction: column; padding: 10px 0; }
+
+  /* เดิม .tab เรียงแนวนอนกลางจอ (text-align:center) ตอนนี้เปลี่ยนเป็นเรียง
+     แนวตั้งในแถบซ้าย ชิดซ้าย มีไอคอนนำหน้า และไฮไลต์ด้วยเส้นซ้าย+พื้นหลัง
+     แทนเส้นใต้แบบเดิม (เข้ากับ layout แนวตั้งมากกว่า) */
   .tab {
-    flex: 1; min-width: 90px; text-align: center; padding: 14px 8px; font-size: 13px;
-    font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent;
+    display: flex; align-items: center; gap: 12px; padding: 13px 18px; font-size: 14px;
+    font-weight: 600; color: var(--ink); cursor: pointer; border-left: 3px solid transparent;
     position: relative; white-space: nowrap;
   }
-
-  .tab.active { color: var(--deep-sea); border-bottom-color: var(--ocean); }
+  .tab .tab-icon { font-size: 17px; width: 22px; text-align: center; flex-shrink: 0; }
+  .tab.active { color: var(--deep-sea); background: var(--foam); border-left-color: var(--ocean); }
 
   .badge {
-    position: absolute; top: 6px; right: 8px; background: var(--coral); color: var(--white);
+    position: static; margin-left: auto; background: var(--coral); color: var(--white);
     font-size: 10px; font-weight: 700; min-width: 17px; height: 17px; border-radius: 9px;
-    display: none; align-items: center; justify-content: center; padding: 0 4px;
+    display: none; align-items: center; justify-content: center; padding: 0 4px; flex-shrink: 0;
   }
 
   .content { max-width: 760px; margin: 0 auto; padding: 18px; }
@@ -440,7 +493,7 @@
     .nvr-row .nvr-label { padding: 0; }
     .case-card .actions { flex-direction: column; align-items: stretch; }
     .case-card select, .case-card .solution-input { width: 100%; }
-    .tab { min-width: 76px; font-size: 12px; padding: 12px 4px; }
+    .sidebar { width: 82vw; max-width: 300px; }
   }
 
   /* เพิ่มขนาดพื้นที่กดของปุ่ม/อินพุตทุกตัวให้กดง่ายด้วยนิ้วบนมือถือ (เป้าหมาย 44px ขั้นต่ำตามคำแนะนำ Apple/Google) */
@@ -579,9 +632,12 @@
 
     <div id="itAppScreen">
       <div class="header">
-        <div>
-          <h1>Sandsea IT Dashboard</h1>
-          <div class="sub" id="lastUpdated">กำลังโหลดข้อมูล...</div>
+        <div style="display:flex; align-items:center; gap:12px; min-width:0;">
+          <button type="button" class="menu-toggle" id="menuToggleBtn" title="เปิดเมนู" aria-label="เปิดเมนู">☰</button>
+          <div style="min-width:0;">
+            <h1>Sandsea IT Dashboard</h1>
+            <div class="sub" id="lastUpdated">กำลังโหลดข้อมูล...</div>
+          </div>
         </div>
         <div style="display:flex; gap:16px; align-items:center;">
           <div style="font-size: 20px; cursor: pointer;" id="refreshBtn" title="รีเฟรชข้อมูล">⟳</div>
@@ -589,21 +645,34 @@
         </div>
       </div>
 
-      <div class="tabs">
-        <div class="tab active" data-panel="dashboard">ภาพรวม</div>
-        <div class="tab" data-panel="ap">AP / Wifi</div>
-        <div class="tab" data-panel="cctv">CCTV</div>
-        <div class="tab" data-panel="backup">Backup</div>
-        <div class="tab" data-panel="cases">
-          เคสปัญหา
-          <span class="badge" id="caseBadge">0</span>
+      <!-- พื้นหลังมัวๆ ตอนเปิดเมนู กดตรงไหนก็ได้เพื่อปิด -->
+      <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+      <!-- แถบเมนูซ้าย: ค่าเริ่มต้นซ่อนอยู่นอกจอ กดปุ่ม ☰ ที่ header เพื่อเรียกออกมา -->
+      <nav class="sidebar" id="sidebar">
+        <div class="sidebar-head">
+          <div class="brand">
+            <img src="icon-192.png" alt="โลโก้ Sandsea IT">
+            <span>Sandsea IT</span>
+          </div>
+          <button type="button" class="sidebar-close" id="sidebarCloseBtn" aria-label="ปิดเมนู">✕</button>
         </div>
-        <div class="tab" data-panel="assets">ทรัพย์สิน</div>
-        <div class="tab" data-panel="supplies">
-          วัสดุสิ้นเปลือง
-          <span class="badge" id="supplyBadge">0</span>
+        <div class="tabs">
+          <div class="tab active" data-panel="dashboard"><span class="tab-icon">📊</span>ภาพรวม</div>
+          <div class="tab" data-panel="ap"><span class="tab-icon">📶</span>AP / Wifi</div>
+          <div class="tab" data-panel="cctv"><span class="tab-icon">🎥</span>CCTV</div>
+          <div class="tab" data-panel="backup"><span class="tab-icon">💾</span>Backup</div>
+          <div class="tab" data-panel="cases">
+            <span class="tab-icon">🛠️</span>เคสปัญหา
+            <span class="badge" id="caseBadge">0</span>
+          </div>
+          <div class="tab" data-panel="assets"><span class="tab-icon">🖥️</span>ทรัพย์สิน</div>
+          <div class="tab" data-panel="supplies">
+            <span class="tab-icon">📦</span>วัสดุสิ้นเปลือง
+            <span class="badge" id="supplyBadge">0</span>
+          </div>
         </div>
-      </div>
+      </nav>
 
       <div class="content">
 
@@ -1144,12 +1213,42 @@
     setTimeout(() => toast.classList.remove('show'), 2600);
   }
 
+  // ===================================================================
+  // ส่วนที่ 5.5: หน้า IT — เมนูซ้าย (sidebar) เปิด/ปิด
+  // -------------------------------------------------------------------
+  // ทำไมแยกเป็นฟังก์ชัน openSidebar/closeSidebar ต่างหาก แทนที่จะ toggle
+  // เฉยๆ: เพราะมีหลายจุดที่ต้อง "สั่งปิด" ตรงๆ (กดเลือกหัวข้อ, กด overlay,
+  // กดปุ่มปิด, กด Esc) การมีฟังก์ชันชื่อชัดเจนทำให้เรียกใช้ถูกจุดง่ายกว่า
+  // ===================================================================
+  const sidebarEl = document.getElementById('sidebar');
+  const sidebarOverlayEl = document.getElementById('sidebarOverlay');
+
+  function openSidebar() {
+    sidebarEl.classList.add('open');
+    sidebarOverlayEl.classList.add('show');
+  }
+  function closeSidebar() {
+    sidebarEl.classList.remove('open');
+    sidebarOverlayEl.classList.remove('show');
+  }
+
+  document.getElementById('menuToggleBtn').addEventListener('click', openSidebar);
+  document.getElementById('sidebarCloseBtn').addEventListener('click', closeSidebar);
+  sidebarOverlayEl.addEventListener('click', closeSidebar);
+  // กด Esc ก็ปิดเมนูได้ เผื่อใช้งานบนคอมพิวเตอร์ที่มีคีย์บอร์ด
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSidebar();
+  });
+
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+      // เลือกหัวข้อแล้วปิดเมนูให้เอง ไม่ต้องกดปิดเองอีกขั้นตอน — กดออกมาใช้
+      // ตอนต้องการ แล้วมันหุบกลับไปเองหลังเลือกเสร็จ ตามที่ต้องการ
+      closeSidebar();
     });
   });
 
