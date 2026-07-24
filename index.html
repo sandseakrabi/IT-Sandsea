@@ -463,6 +463,7 @@
   .asset-card .meta { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
   .asset-card .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   .pill-disposed { background: #ECECEC; color: #666666; }
+  .pill-stock { background: #E3F0F7; color: #0F3B57; } /* สถานะ "สำรอง" (ของในคลัง ยังไม่ได้เบิก) */
 
   /* ===================================================================
      Modal กลาง ใช้ร่วมกันทุกฟอร์มของระบบทรัพย์สิน IT (เพิ่ม/แก้ไขทรัพย์สิน,
@@ -667,6 +668,10 @@
             <span class="badge" id="caseBadge">0</span>
           </div>
           <div class="tab" data-panel="assets"><span class="tab-icon">🖥️</span>ทรัพย์สิน</div>
+          <div class="tab" data-panel="stockit">
+            <span class="tab-icon">🗃️</span>Stock IT
+            <span class="badge" id="stockBadge">0</span>
+          </div>
           <div class="tab" data-panel="supplies">
             <span class="tab-icon">📦</span>วัสดุสิ้นเปลือง
             <span class="badge" id="supplyBadge">0</span>
@@ -818,12 +823,32 @@
           </div>
           <div class="filter-bar" id="assetFilterBar">
             <div class="chip active" data-filter="all">ทั้งหมด</div>
+            <div class="chip" data-filter="สำรอง">สำรอง</div>
             <div class="chip" data-filter="ใช้งานได้">ใช้งานได้</div>
             <div class="chip" data-filter="ซ่อมบำรุง">ซ่อมบำรุง</div>
             <div class="chip" data-filter="ชำรุด">ชำรุด</div>
             <div class="chip" data-filter="จำหน่ายแล้ว">จำหน่ายแล้ว</div>
           </div>
           <div id="assetList"></div>
+        </div>
+
+        <!-- ===================================================================
+             แท็บ "Stock IT" — ไม่ใช่ระบบแยก แค่ "หน้าต่างกรองดู" ทรัพย์สินที่
+             สถานะเป็น "สำรอง" (มีข้อมูลอยู่แล้วในระบบทรัพย์สิน แต่ยังไม่ได้เบิก/
+             มอบหมายให้ใคร) เท่านั้น ใช้ข้อมูล ปุ่ม และประวัติชุดเดียวกับแท็บ
+             "ทรัพย์สิน" ทั้งหมด (allAssetsCache ก้อนเดียวกัน) พอกด "เบิก/มอบหมาย"
+             ที่การ์ด สถานะจะเปลี่ยนเป็น "ใช้งานได้" ให้อัตโนมัติ (ดู assignAsset()
+             ใน Assets.gs) ของชิ้นนั้นจะหลุดออกจากรายการนี้ไปเองทันที ไม่ต้องสร้าง
+             รายการ/ตารางใหม่ ไม่ต้องเขียน backend เพิ่ม
+             =================================================================== -->
+        <div class="panel" id="panel-stockit">
+          <div style="background:#E3F0F7; color:#0F3B57; border:1px solid #bcdcff; border-radius:10px; padding:12px 14px; margin-bottom:12px; font-size:13px; line-height:1.6;">
+            📦 แสดงเฉพาะทรัพย์สินที่สถานะ <strong>"สำรอง"</strong> — มีอยู่ในคลังแล้ว ยังไม่ได้เบิก/มอบหมายให้ใคร<br>
+            กด "เบิก/มอบหมาย" ที่การ์ดเพื่อจ่ายออกได้เลย ของจะหลุดจากหน้านี้ไปเองอัตโนมัติ
+          </div>
+          <input type="text" id="stockSearchInput" placeholder="ค้นหาชื่อ / Serial"
+            style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px; margin-bottom:12px;">
+          <div id="stockList"></div>
         </div>
 
         <!-- ===================================================================
@@ -1814,6 +1839,7 @@
   async function loadAssets() {
     allAssetsCache = await apiGet('getAssets');
     renderAssetList();
+    renderStockList();
   }
 
   document.querySelectorAll('#assetFilterBar .chip').forEach(chip => {
@@ -1825,12 +1851,25 @@
     });
   });
   document.getElementById('assetSearchInput').addEventListener('input', renderAssetList);
+  document.getElementById('stockSearchInput').addEventListener('input', renderStockList);
 
   function assetStatusPillClass(status) {
+    if (status === 'สำรอง') return 'pill-stock';
     if (status === 'ใช้งานได้') return 'pill-done';
     if (status === 'ซ่อมบำรุง') return 'pill-progress';
     if (status === 'ชำรุด') return 'pill-new';
     return 'pill-disposed'; // จำหน่ายแล้ว
+  }
+
+  /** ใช้ร่วมกันทั้งช่องค้นหาของแท็บ "ทรัพย์สิน" และแท็บ "Stock IT" */
+  function filterAssetsByKeyword_(list, keyword) {
+    if (!keyword) return list;
+    return list.filter(a =>
+      String(a.Name || '').toLowerCase().includes(keyword) ||
+      String(a.Serial_Number || '').toLowerCase().includes(keyword) ||
+      String(a.Assigned_To || '').toLowerCase().includes(keyword) ||
+      String(a.Asset_ID || '').toLowerCase().includes(keyword)
+    );
   }
 
   function renderAssetList() {
@@ -1840,16 +1879,44 @@
       ? allAssetsCache
       : allAssetsCache.filter(a => a.Status === currentAssetFilter);
 
-    if (keyword) {
-      filtered = filtered.filter(a =>
-        String(a.Name || '').toLowerCase().includes(keyword) ||
-        String(a.Serial_Number || '').toLowerCase().includes(keyword) ||
-        String(a.Assigned_To || '').toLowerCase().includes(keyword) ||
-        String(a.Asset_ID || '').toLowerCase().includes(keyword)
-      );
-    }
+    filtered = filterAssetsByKeyword_(filtered, keyword);
+    renderAssetCardsInto_('assetList', filtered);
+  }
 
-    const container = document.getElementById('assetList');
+  /**
+   * แท็บ "Stock IT" — ไม่ใช่ระบบแยก แค่กรอง allAssetsCache (ก้อนเดียวกับแท็บ
+   * "ทรัพย์สิน" ไม่ได้ดึงข้อมูลซ้ำ) เอาเฉพาะ Status = "สำรอง" มาแสดง ใช้การ์ด/
+   * ปุ่ม/ประวัติชุดเดียวกันทุกอย่างผ่าน renderAssetCardsInto_() ด้านล่าง พอกด
+   * "เบิก/มอบหมาย" แล้วสถานะเปลี่ยนเป็น "ใช้งานได้" (ฝั่ง server ใน Assets.gs)
+   * ของชิ้นนั้นจะหายจากรายการนี้เองตอน loadAssets() รอบถัดไป
+   */
+  function renderStockList() {
+    const keyword = document.getElementById('stockSearchInput').value.trim().toLowerCase();
+    let filtered = allAssetsCache.filter(a => a.Status === 'สำรอง');
+    filtered = filterAssetsByKeyword_(filtered, keyword);
+    renderAssetCardsInto_('stockList', filtered);
+    updateStockBadge();
+  }
+
+  function updateStockBadge() {
+    const count = allAssetsCache.filter(a => a.Status === 'สำรอง').length;
+    const badge = document.getElementById('stockBadge');
+    if (count > 0) {
+      badge.textContent = count > 99 ? '99+' : count;
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  /**
+   * สร้างการ์ดทรัพย์สินชุดหนึ่งลงกล่อง (container) ที่ระบุ พร้อมผูกปุ่มทุกอัน
+   * แยกออกมาต่างหากจาก renderAssetList() เดิม เพราะแท็บ "ทรัพย์สิน" (#assetList)
+   * และแท็บ "Stock IT" (#stockList) ใช้โครงการ์ด/ปุ่มชุดเดียวกันทุกอย่าง ต่างกัน
+   * แค่ "รายการที่กรองมาแล้ว" กับ "กล่องปลายทาง" เท่านั้น เขียนโค้ดชุดเดียวพอ
+   */
+  function renderAssetCardsInto_(containerId, filtered) {
+    const container = document.getElementById(containerId);
     if (!filtered.length) {
       container.innerHTML = '<div class="empty-state">ไม่มีทรัพย์สินในหมวดนี้</div>';
       return;
@@ -1973,7 +2040,7 @@
     const categoriesWithSpecs = ['PC', 'Notebook'];
     // หมวดหมู่กล้อง/เครือข่ายที่ต้องโชว์ช่อง IP/MAC แทน
     const categoriesWithNetworkSpecs = ['NVR,CCTV'];
-    const statuses = ['ใช้งานได้', 'ซ่อมบำรุง', 'ชำรุด', 'จำหน่ายแล้ว'];
+    const statuses = ['สำรอง', 'ใช้งานได้', 'ซ่อมบำรุง', 'ชำรุด', 'จำหน่ายแล้ว'];
 
     openModal(isEdit ? 'แก้ไขทรัพย์สิน ' + asset.Asset_ID : 'เพิ่มทรัพย์สินใหม่', `
       <form id="assetForm">
