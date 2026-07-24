@@ -1852,6 +1852,8 @@
   function openAssetFormModal(asset) {
     const isEdit = !!asset;
     const categories = ['PC', 'Notebook', 'Moniter', 'Printer', 'NVR,CCTV', 'Router,Swicth', 'อื่นๆ'];
+    // หมวดหมู่ที่ต้องโชว์ช่องสเปคเครื่องเพิ่ม (CPU/RAM/HDD-SSD/Windows)
+    const categoriesWithSpecs = ['PC', 'Notebook'];
     const statuses = ['ใช้งานได้', 'ซ่อมบำรุง', 'ชำรุด', 'จำหน่ายแล้ว'];
 
     openModal(isEdit ? 'แก้ไขทรัพย์สิน ' + asset.Asset_ID : 'เพิ่มทรัพย์สินใหม่', `
@@ -1873,6 +1875,21 @@
           <div class="field"><label>ยี่ห้อ/รุ่น</label><input type="text" id="assetBrand" value="${isEdit ? escapeHtml(asset.Brand_Model || '') : ''}"></div>
           <div class="field"><label>Serial Number</label><input type="text" id="assetSerial" value="${isEdit ? escapeHtml(asset.Serial_Number || '') : ''}"></div>
         </div>
+        <div id="specWrap" style="display:none;">
+          <div class="row2">
+            <div class="field"><label>CPU</label><input type="text" id="assetCpu" placeholder="เช่น Intel Core i5-12400" value="${isEdit ? escapeHtml(asset.CPU || '') : ''}"></div>
+            <div class="field"><label>RAM</label><input type="text" id="assetRam" placeholder="เช่น 8GB" value="${isEdit ? escapeHtml(asset.RAM || '') : ''}"></div>
+          </div>
+          <div class="row2">
+            <div class="field"><label>HDD/SSD (GB)</label><input type="number" id="assetStorage" min="0" step="1" placeholder="เช่น 512" value="${isEdit ? escapeHtml(String(parseInt(asset.Storage || '', 10) || '')) : ''}"></div>
+            <div class="field"><label>Windows</label>
+              <select id="assetWindows">
+                <option value="แท้" ${isEdit && asset.Windows_License === 'แท้' ? 'selected' : ''}>แท้</option>
+                <option value="ไม่แท้" ${isEdit && asset.Windows_License === 'ไม่แท้' ? 'selected' : ''}>ไม่แท้</option>
+              </select>
+            </div>
+          </div>
+        </div>
         <div class="row2">
           <div class="field"><label>วันที่ซื้อ</label><input type="date" id="assetPurchaseDate" value="${isEdit ? (asset.Purchase_Date || '') : ''}"></div>
           <div class="field"><label>ราคา (บาท)</label><input type="number" id="assetPrice" min="0" step="0.01" value="${isEdit ? (asset.Price || '') : ''}"></div>
@@ -1886,11 +1903,23 @@
       </form>
     `);
 
+    // ทำไมต้องมี: ช่องสเปคเครื่อง (CPU/RAM/HDD-SSD/Windows) มีความหมายเฉพาะกับ
+    // เครื่อง PC/Notebook เท่านั้น หมวดอื่น เช่น จอภาพ หรือกล้อง CCTV ไม่เกี่ยวข้อง
+    // จึงซ่อนไว้ก่อน แล้วโชว์เฉพาะตอนเลือกหมวดหมู่ตรงกับ categoriesWithSpecs
+    function toggleSpecFields() {
+      const cat = document.getElementById('assetCategory').value;
+      document.getElementById('specWrap').style.display = categoriesWithSpecs.includes(cat) ? 'block' : 'none';
+    }
+    document.getElementById('assetCategory').addEventListener('change', toggleSpecFields);
+    toggleSpecFields(); // เช็คทันทีตอนเปิดฟอร์ม เผื่อโหมดแก้ไขที่หมวดหมู่เดิมเป็น PC/Notebook อยู่แล้ว
+
     document.getElementById('assetForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('assetFormSubmitBtn');
       btn.disabled = true;
       btn.textContent = 'กำลังบันทึก...';
+
+      const showingSpecs = categoriesWithSpecs.includes(document.getElementById('assetCategory').value);
 
       const payload = {
         name: document.getElementById('assetName').value.trim(),
@@ -1902,7 +1931,13 @@
         price: document.getElementById('assetPrice').value,
         warrantyEnd: document.getElementById('assetWarranty').value,
         location: document.getElementById('assetLocation').value.trim(),
-        notes: document.getElementById('assetNotes').value.trim()
+        notes: document.getElementById('assetNotes').value.trim(),
+        // ส่งช่องสเปคเฉพาะตอนหมวดหมู่เป็น PC/Notebook เท่านั้น ถ้าเป็นหมวดอื่น
+        // ส่งค่าว่างไปแทน กันกรณีผู้ใช้เคยกรอกไว้ก่อนเปลี่ยนหมวดหมู่ในนาทีสุดท้าย
+        cpu: showingSpecs ? document.getElementById('assetCpu').value.trim() : '',
+        ram: showingSpecs ? document.getElementById('assetRam').value.trim() : '',
+        storage: showingSpecs ? document.getElementById('assetStorage').value : '',
+        windowsLicense: showingSpecs ? document.getElementById('assetWindows').value : ''
       };
 
       try {
