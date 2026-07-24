@@ -1771,6 +1771,7 @@
           <div class="actions">
             <button type="button" class="btn btn-secondary asset-qr-btn">🔗 QR</button>
             <button type="button" class="btn btn-secondary asset-assign-btn">${a.Assigned_To ? '📤 รับคืน' : '📥 เบิก/มอบหมาย'}</button>
+            <button type="button" class="btn btn-secondary asset-maint-btn">🛠️ ซ่อมบำรุง</button>
             <button type="button" class="btn btn-secondary asset-edit-btn">✏️ แก้ไข</button>
           </div>
           <div class="history-section">
@@ -1794,6 +1795,14 @@
         const assetId = e.target.closest('.asset-card').dataset.assetId;
         const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
         openAssetAssignModal(asset);
+      });
+    });
+
+    container.querySelectorAll('.asset-maint-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const assetId = e.target.closest('.asset-card').dataset.assetId;
+        const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
+        openMaintenanceModal(asset);
       });
     });
 
@@ -1852,8 +1861,10 @@
   function openAssetFormModal(asset) {
     const isEdit = !!asset;
     const categories = ['PC', 'Notebook', 'Moniter', 'Printer', 'NVR,CCTV', 'Router,Swicth', 'อื่นๆ'];
-    // หมวดหมู่ที่ต้องโชว์ช่องสเปคเครื่องเพิ่ม (CPU/RAM/HDD-SSD/Windows)
+    // หมวดหมู่ที่ต้องโชว์ช่องสเปคเครื่อง (Device Name/IP/CPU/RAM/DDR/HDD-SSD/Windows)
     const categoriesWithSpecs = ['PC', 'Notebook'];
+    // หมวดหมู่กล้อง/เครือข่ายที่ต้องโชว์ช่อง IP/MAC แทน
+    const categoriesWithNetworkSpecs = ['NVR,CCTV'];
     const statuses = ['ใช้งานได้', 'ซ่อมบำรุง', 'ชำรุด', 'จำหน่ายแล้ว'];
 
     openModal(isEdit ? 'แก้ไขทรัพย์สิน ' + asset.Asset_ID : 'เพิ่มทรัพย์สินใหม่', `
@@ -1875,10 +1886,22 @@
           <div class="field"><label>ยี่ห้อ/รุ่น</label><input type="text" id="assetBrand" value="${isEdit ? escapeHtml(asset.Brand_Model || '') : ''}"></div>
           <div class="field"><label>Serial Number</label><input type="text" id="assetSerial" value="${isEdit ? escapeHtml(asset.Serial_Number || '') : ''}"></div>
         </div>
-        <div id="specWrap" style="display:none;">
+        <div id="specWrapPC" style="display:none;">
           <div class="row2">
-            <div class="field"><label>CPU</label><input type="text" id="assetCpu" placeholder="เช่น Intel Core i5-12400" value="${isEdit ? escapeHtml(asset.CPU || '') : ''}"></div>
-            <div class="field"><label>RAM</label><input type="text" id="assetRam" placeholder="เช่น 8GB" value="${isEdit ? escapeHtml(asset.RAM || '') : ''}"></div>
+            <div class="field"><label>Device Name</label><input type="text" id="assetDeviceName" placeholder="เช่น IT-NB-001" value="${isEdit ? escapeHtml(asset.Device_Name || '') : ''}"></div>
+            <div class="field"><label>IP Address</label><input type="text" id="assetIpPc" placeholder="เช่น 192.168.1.50" value="${isEdit ? escapeHtml(asset.IP_Address || '') : ''}"></div>
+          </div>
+          <div class="field"><label>CPU</label><input type="text" id="assetCpu" placeholder="เช่น Intel Core i5-12400" value="${isEdit ? escapeHtml(asset.CPU || '') : ''}"></div>
+          <div class="row2">
+            <div class="field"><label>RAM (GB)</label><input type="number" id="assetRam" min="0" step="1" placeholder="เช่น 8" value="${isEdit ? escapeHtml(String(parseInt(asset.RAM || '', 10) || '')) : ''}"></div>
+            <div class="field"><label>DDR</label>
+              <select id="assetRamDdr">
+                <option value="">ไม่ระบุ</option>
+                <option value="DDR3" ${isEdit && asset.RAM_DDR === 'DDR3' ? 'selected' : ''}>DDR3</option>
+                <option value="DDR4" ${isEdit && asset.RAM_DDR === 'DDR4' ? 'selected' : ''}>DDR4</option>
+                <option value="DDR5" ${isEdit && asset.RAM_DDR === 'DDR5' ? 'selected' : ''}>DDR5</option>
+              </select>
+            </div>
           </div>
           <div class="row2">
             <div class="field"><label>HDD/SSD (GB)</label><input type="number" id="assetStorage" min="0" step="1" placeholder="เช่น 512" value="${isEdit ? escapeHtml(String(parseInt(asset.Storage || '', 10) || '')) : ''}"></div>
@@ -1888,6 +1911,12 @@
                 <option value="ไม่แท้" ${isEdit && asset.Windows_License === 'ไม่แท้' ? 'selected' : ''}>ไม่แท้</option>
               </select>
             </div>
+          </div>
+        </div>
+        <div id="specWrapCCTV" style="display:none;">
+          <div class="row2">
+            <div class="field"><label>IP Address</label><input type="text" id="assetIpCctv" placeholder="เช่น 192.168.1.100" value="${isEdit ? escapeHtml(asset.IP_Address || '') : ''}"></div>
+            <div class="field"><label>MAC Address</label><input type="text" id="assetMac" placeholder="เช่น AA:BB:CC:DD:EE:FF" value="${isEdit ? escapeHtml(asset.MAC_Address || '') : ''}"></div>
           </div>
         </div>
         <div class="row2">
@@ -1903,15 +1932,17 @@
       </form>
     `);
 
-    // ทำไมต้องมี: ช่องสเปคเครื่อง (CPU/RAM/HDD-SSD/Windows) มีความหมายเฉพาะกับ
-    // เครื่อง PC/Notebook เท่านั้น หมวดอื่น เช่น จอภาพ หรือกล้อง CCTV ไม่เกี่ยวข้อง
-    // จึงซ่อนไว้ก่อน แล้วโชว์เฉพาะตอนเลือกหมวดหมู่ตรงกับ categoriesWithSpecs
+    // ทำไมต้องมี: ช่องสเปคเครื่อง (Device Name/IP/CPU/RAM/DDR/HDD-SSD/Windows)
+    // มีความหมายเฉพาะกับเครื่อง PC/Notebook เท่านั้น ส่วน IP/MAC มีความหมาย
+    // เฉพาะกับกล้อง/เครือข่าย (NVR,CCTV) หมวดอื่นไม่เกี่ยวข้องเลย จึงซ่อนไว้ก่อน
+    // แล้วโชว์เฉพาะกลุ่มที่ตรงกับหมวดหมู่ที่เลือก
     function toggleSpecFields() {
       const cat = document.getElementById('assetCategory').value;
-      document.getElementById('specWrap').style.display = categoriesWithSpecs.includes(cat) ? 'block' : 'none';
+      document.getElementById('specWrapPC').style.display = categoriesWithSpecs.includes(cat) ? 'block' : 'none';
+      document.getElementById('specWrapCCTV').style.display = categoriesWithNetworkSpecs.includes(cat) ? 'block' : 'none';
     }
     document.getElementById('assetCategory').addEventListener('change', toggleSpecFields);
-    toggleSpecFields(); // เช็คทันทีตอนเปิดฟอร์ม เผื่อโหมดแก้ไขที่หมวดหมู่เดิมเป็น PC/Notebook อยู่แล้ว
+    toggleSpecFields(); // เช็คทันทีตอนเปิดฟอร์ม เผื่อโหมดแก้ไขที่หมวดหมู่เดิมตรงกับกลุ่มใดกลุ่มหนึ่งอยู่แล้ว
 
     document.getElementById('assetForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1919,11 +1950,13 @@
       btn.disabled = true;
       btn.textContent = 'กำลังบันทึก...';
 
-      const showingSpecs = categoriesWithSpecs.includes(document.getElementById('assetCategory').value);
+      const cat = document.getElementById('assetCategory').value;
+      const showingPCSpecs = categoriesWithSpecs.includes(cat);
+      const showingCCTVSpecs = categoriesWithNetworkSpecs.includes(cat);
 
       const payload = {
         name: document.getElementById('assetName').value.trim(),
-        category: document.getElementById('assetCategory').value,
+        category: cat,
         status: document.getElementById('assetStatus').value,
         brandModel: document.getElementById('assetBrand').value.trim(),
         serialNumber: document.getElementById('assetSerial').value.trim(),
@@ -1932,12 +1965,19 @@
         warrantyEnd: document.getElementById('assetWarranty').value,
         location: document.getElementById('assetLocation').value.trim(),
         notes: document.getElementById('assetNotes').value.trim(),
-        // ส่งช่องสเปคเฉพาะตอนหมวดหมู่เป็น PC/Notebook เท่านั้น ถ้าเป็นหมวดอื่น
+        // ส่งช่องสเปคเฉพาะตอนหมวดหมู่ตรงกลุ่มนั้นจริงๆ เท่านั้น ถ้าเป็นหมวดอื่น
         // ส่งค่าว่างไปแทน กันกรณีผู้ใช้เคยกรอกไว้ก่อนเปลี่ยนหมวดหมู่ในนาทีสุดท้าย
-        cpu: showingSpecs ? document.getElementById('assetCpu').value.trim() : '',
-        ram: showingSpecs ? document.getElementById('assetRam').value.trim() : '',
-        storage: showingSpecs ? document.getElementById('assetStorage').value : '',
-        windowsLicense: showingSpecs ? document.getElementById('assetWindows').value : ''
+        deviceName: showingPCSpecs ? document.getElementById('assetDeviceName').value.trim() : '',
+        cpu: showingPCSpecs ? document.getElementById('assetCpu').value.trim() : '',
+        ram: showingPCSpecs ? document.getElementById('assetRam').value : '',
+        ramDdr: showingPCSpecs ? document.getElementById('assetRamDdr').value : '',
+        storage: showingPCSpecs ? document.getElementById('assetStorage').value : '',
+        windowsLicense: showingPCSpecs ? document.getElementById('assetWindows').value : '',
+        // IP มาจากช่องคนละอันกันระหว่าง PC/Notebook กับ CCTV แต่บันทึกลงคอลัมน์เดียวกัน
+        ipAddress: showingPCSpecs
+          ? document.getElementById('assetIpPc').value.trim()
+          : (showingCCTVSpecs ? document.getElementById('assetIpCctv').value.trim() : ''),
+        macAddress: showingCCTVSpecs ? document.getElementById('assetMac').value.trim() : ''
       };
 
       try {
@@ -1992,6 +2032,139 @@
         showToast('บันทึกไม่สำเร็จ: ' + err.message);
         btn.disabled = false;
         btn.textContent = isReturn ? 'ยืนยันรับคืน' : 'ยืนยันมอบหมาย';
+      }
+    });
+  }
+
+  /**
+   * เปิด modal บันทึก + ดูประวัติการซ่อมบำรุงของทรัพย์สินชิ้นนั้น
+   * ทำไมต้องแยกจากการเปลี่ยนสถานะในฟอร์มแก้ไข: การเปลี่ยนสถานะ (Status) บอกแค่
+   * "ตอนนี้เครื่องอยู่ในสภาพไหน" แต่ไม่ได้เก็บว่า "ทำอะไรไปบ้าง ใครทำ เสียเงิน
+   * เท่าไหร่" ซึ่งจำเป็นเวลาต้องย้อนดูประวัติซ่อมของเครื่องนั้นทีหลัง
+   */
+  function openMaintenanceModal(asset) {
+    openModal('ประวัติการซ่อมบำรุง: ' + asset.Asset_ID + ' · ' + asset.Name, `
+      <form id="maintForm">
+        <div class="field"><label>รายละเอียดการซ่อมบำรุง *</label><textarea id="maintDetail" required placeholder="เช่น เปลี่ยนพัดลม CPU, ล้างเครื่อง, อัพเดท Windows"></textarea></div>
+        <div class="row2">
+          <div class="field"><label>ผู้ดำเนินการ</label><input type="text" id="maintTechnician" placeholder="ชื่อช่าง/ทีม"></div>
+          <div class="field"><label>ค่าใช้จ่าย (บาท)</label><input type="number" id="maintCost" min="0" step="0.01"></div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="maintSubmitBtn">บันทึก</button>
+      </form>
+      <div class="history-section" style="margin-top:18px;">
+        <div style="font-weight:600;color:var(--deep-sea);font-size:14px;margin-bottom:8px;">ประวัติที่ผ่านมา</div>
+        <div class="history-list open" id="maintHistoryList"><div class="history-loading" style="color:var(--muted);font-size:13px;">กำลังโหลด...</div></div>
+      </div>
+    `);
+
+    loadMaintenanceHistory_(asset.Asset_ID);
+
+    document.getElementById('maintForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('maintSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'กำลังบันทึก...';
+      try {
+        await apiPost('addMaintenanceRecord', {
+          assetId: asset.Asset_ID,
+          detail: document.getElementById('maintDetail').value.trim(),
+          technician: document.getElementById('maintTechnician').value.trim(),
+          cost: document.getElementById('maintCost').value
+        });
+        showToast('บันทึกประวัติการซ่อมบำรุงเรียบร้อย');
+        document.getElementById('maintForm').reset();
+        await loadMaintenanceHistory_(asset.Asset_ID);
+      } catch (err) {
+        showToast('บันทึกไม่สำเร็จ: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'บันทึก';
+      }
+    });
+  }
+
+  /** โหลดประวัติการซ่อมบำรุงจาก server มาแสดงใน modal (เรียกซ้ำได้หลังบันทึกใหม่) */
+  async function loadMaintenanceHistory_(assetId) {
+    const listEl = document.getElementById('maintHistoryList');
+    if (!listEl) return; // ผู้ใช้อาจปิด modal ไปแล้วก่อนโหลดเสร็จ
+    listEl.innerHTML = '<div class="history-loading" style="color:var(--muted);font-size:13px;">กำลังโหลด...</div>';
+    try {
+      const history = await apiGet('getMaintenanceHistory', { assetId });
+      listEl.innerHTML = renderHistoryItems_(
+        history,
+        h => 'ซ่อมบำรุง' + (h.Cost ? ' · ' + Number(h.Cost).toLocaleString('th-TH') + ' บาท' : ''),
+        h => h.Detail + (h.Technician ? ' (ผู้ดำเนินการ: ' + h.Technician + ')' : '')
+      );
+    } catch (err) {
+      listEl.innerHTML = '<div style="color:var(--coral);font-size:13px;">โหลดประวัติไม่สำเร็จ: ' + err.message + '</div>';
+    }
+  }
+
+  /**
+   * เปิด modal แสดงข้อมูลทรัพย์สินชิ้นเดียว (ใช้ตอนสแกน QR) ต่างจาก
+   * openAssetFormModal ตรงที่อันนี้เป็น "หน้าดูข้อมูล" ไม่ใช่ฟอร์มแก้ไข —
+   * มีปุ่ม QR / เบิก-มอบหมาย / ซ่อมบำรุง / แก้ไข ให้กดต่อเอาเอง เหมือนการ์ด
+   * ในหน้ารายการทรัพย์สินทั่วไปทุกอย่าง แค่โฟกัสเครื่องเดียว
+   */
+  function openAssetDetailModal(asset) {
+    const holderLine = asset.Assigned_To ? '👤 ผู้ถือครอง: ' + escapeHtml(asset.Assigned_To) : '👤 อยู่ในคลัง (ยังไม่ได้เบิก)';
+
+    // บรรทัดสเปคเพิ่มเติม แสดงเฉพาะค่าที่มีข้อมูลจริง ไม่โชว์ช่องว่างเปล่าๆ
+    let specLines = '';
+    if (['PC', 'Notebook'].includes(asset.Category)) {
+      if (asset.Device_Name) specLines += `<div class="meta">💻 Device Name: ${escapeHtml(asset.Device_Name)}</div>`;
+      if (asset.IP_Address) specLines += `<div class="meta">🌐 IP: ${escapeHtml(asset.IP_Address)}</div>`;
+      if (asset.CPU) specLines += `<div class="meta">🧠 CPU: ${escapeHtml(asset.CPU)}</div>`;
+      if (asset.RAM) specLines += `<div class="meta">💾 RAM: ${escapeHtml(asset.RAM)}${asset.RAM_DDR ? ' (' + escapeHtml(asset.RAM_DDR) + ')' : ''}</div>`;
+      if (asset.Storage) specLines += `<div class="meta">💽 HDD/SSD: ${escapeHtml(asset.Storage)}</div>`;
+      if (asset.Windows_License) specLines += `<div class="meta">🪟 Windows: ${escapeHtml(asset.Windows_License)}</div>`;
+    } else if (asset.Category === 'NVR,CCTV') {
+      if (asset.IP_Address) specLines += `<div class="meta">🌐 IP: ${escapeHtml(asset.IP_Address)}</div>`;
+      if (asset.MAC_Address) specLines += `<div class="meta">🔗 MAC: ${escapeHtml(asset.MAC_Address)}</div>`;
+    }
+
+    openModal(asset.Asset_ID + ' · ' + asset.Name, `
+      <div class="asset-card" style="border:none; padding:0; margin-bottom:0;">
+        <div class="top-row">
+          <div>
+            <div class="meta">${escapeHtml(asset.Category)} · ${escapeHtml(asset.Brand_Model || '-')} ${asset.Serial_Number ? '· SN: ' + escapeHtml(asset.Serial_Number) : ''}</div>
+            <div class="meta">📍 ${escapeHtml(asset.Location || '-')} · ${holderLine}</div>
+            ${specLines}
+          </div>
+          <span class="pill ${assetStatusPillClass(asset.Status)}">${escapeHtml(asset.Status)}</span>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-secondary" id="detailQrBtn">🔗 QR</button>
+          <button type="button" class="btn btn-secondary" id="detailAssignBtn">${asset.Assigned_To ? '📤 รับคืน' : '📥 เบิก/มอบหมาย'}</button>
+          <button type="button" class="btn btn-secondary" id="detailMaintBtn">🛠️ ประวัติการซ่อมบำรุง</button>
+          <button type="button" class="btn btn-secondary" id="detailEditBtn">✏️ แก้ไข</button>
+        </div>
+        <div class="history-section">
+          <button type="button" class="history-toggle" id="detailHistoryToggle">ดูประวัติ</button>
+          <div class="history-list" id="detailHistoryList"><div class="history-loading" style="color:var(--muted);font-size:13px;">กำลังโหลด...</div></div>
+        </div>
+      </div>
+    `);
+
+    document.getElementById('detailQrBtn').addEventListener('click', () => openAssetQrModal(asset));
+    document.getElementById('detailAssignBtn').addEventListener('click', () => openAssetAssignModal(asset));
+    document.getElementById('detailMaintBtn').addEventListener('click', () => openMaintenanceModal(asset));
+    document.getElementById('detailEditBtn').addEventListener('click', () => openAssetFormModal(asset));
+
+    // ปุ่ม "ดูประวัติ" — โหลดจาก server แบบ lazy เหมือนในหน้ารายการทั่วไป
+    let historyLoaded = false;
+    document.getElementById('detailHistoryToggle').addEventListener('click', async () => {
+      const listEl = document.getElementById('detailHistoryList');
+      listEl.classList.toggle('open');
+      if (!historyLoaded && listEl.classList.contains('open')) {
+        historyLoaded = true;
+        try {
+          const history = await apiGet('getAssetHistory', { assetId: asset.Asset_ID });
+          listEl.innerHTML = renderHistoryItems_(history, h => `${h.Action}${h.Person ? ' · ' + escapeHtml(h.Person) : ''}`, h => h.Detail);
+        } catch (err) {
+          listEl.innerHTML = '<div style="color:var(--coral);font-size:13px;">โหลดประวัติไม่สำเร็จ: ' + err.message + '</div>';
+        }
       }
     });
   }
@@ -2274,8 +2447,10 @@
   // ทำไมต้องมี: ทรัพย์สินแต่ละชิ้นมี QR Code ติดอยู่ (ดู openAssetQrModal) เมื่อ
   // ทีม IT สแกนด้วยกล้องมือถือ ลิงก์จะพา browser มาเปิดหน้านี้พร้อม query string
   // "?asset=AS0001" ท้าย URL ฟังก์ชันนี้ตรวจจับค่านั้นตั้งแต่โหลดหน้าเว็บ แล้ว
-  // หลัง login สำเร็จ + โหลดข้อมูลเสร็จ จะพาไปที่แท็บ "ทรัพย์สิน" และเปิดฟอร์ม
-  // แก้ไขทรัพย์สินชิ้นนั้นให้อัตโนมัติ ไม่ต้องมานั่งค้นหาเอง
+  // หลัง login สำเร็จ + โหลดข้อมูลเสร็จ จะพาไปที่แท็บ "ทรัพย์สิน" และเปิด "หน้า
+  // ดูข้อมูล" ของทรัพย์สินชิ้นนั้นให้อัตโนมัติ (openAssetDetailModal ไม่ใช่ฟอร์ม
+  // แก้ไขตรงๆ เพราะปกติสแกนแล้วอยากรู้ว่าเครื่องนี้คืออะไร สภาพเป็นยังไง
+  // มากกว่าจะแก้ไขทันที ถ้าจะแก้ไขมีปุ่ม "แก้ไข" ในหน้านั้นให้กดต่อเอง)
   // ยังต้องกรอกรหัสผ่าน login ตามปกติเสมอ (query string ไม่ได้ข้ามการล็อกอิน)
   // ===================================================================
   const deepLinkAssetId = new URLSearchParams(location.search).get('asset');
@@ -2290,7 +2465,7 @@
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.querySelector('.tab[data-panel="assets"]').classList.add('active');
     document.getElementById('panel-assets').classList.add('active');
-    openAssetFormModal(asset);
+    openAssetDetailModal(asset);
   }
 
   // ถ้ามีลิงก์สแกน QR ติดมา ให้ข้ามหน้าเลือกบทบาทไปหน้า IT ตรงๆเลย (ยังต้องกรอกรหัสผ่านตามปกติ)
