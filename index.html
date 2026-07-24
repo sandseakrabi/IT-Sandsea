@@ -1772,6 +1772,7 @@
             <button type="button" class="btn btn-secondary asset-qr-btn">🔗 QR</button>
             <button type="button" class="btn btn-secondary asset-assign-btn">${a.Assigned_To ? '📤 รับคืน' : '📥 เบิก/มอบหมาย'}</button>
             <button type="button" class="btn btn-secondary asset-maint-btn">🛠️ ซ่อมบำรุง</button>
+            <button type="button" class="btn btn-secondary asset-maint-history-btn">📜 ประวัติการซ่อมบำรุง</button>
             <button type="button" class="btn btn-secondary asset-edit-btn">✏️ แก้ไข</button>
           </div>
           <div class="history-section">
@@ -1803,6 +1804,14 @@
         const assetId = e.target.closest('.asset-card').dataset.assetId;
         const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
         openMaintenanceModal(asset);
+      });
+    });
+
+    container.querySelectorAll('.asset-maint-history-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const assetId = e.target.closest('.asset-card').dataset.assetId;
+        const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
+        openMaintenanceHistoryModal(asset);
       });
     });
 
@@ -2043,7 +2052,7 @@
    * เท่าไหร่" ซึ่งจำเป็นเวลาต้องย้อนดูประวัติซ่อมของเครื่องนั้นทีหลัง
    */
   function openMaintenanceModal(asset) {
-    openModal('ประวัติการซ่อมบำรุง: ' + asset.Asset_ID + ' · ' + asset.Name, `
+    openModal('ซ่อมบำรุง: ' + asset.Asset_ID + ' · ' + asset.Name, `
       <form id="maintForm">
         <div class="field"><label>รายละเอียดการซ่อมบำรุง *</label><textarea id="maintDetail" required placeholder="เช่น เปลี่ยนพัดลม CPU, ล้างเครื่อง, อัพเดท Windows"></textarea></div>
         <div class="row2">
@@ -2064,16 +2073,10 @@
         </div>
         <button type="submit" class="btn btn-primary" style="width:100%;" id="maintSubmitBtn">บันทึก</button>
       </form>
-      <div class="history-section" style="margin-top:18px;">
-        <div style="font-weight:600;color:var(--deep-sea);font-size:14px;margin-bottom:8px;">ประวัติที่ผ่านมา</div>
-        <div class="history-list open" id="maintHistoryList"><div class="history-loading" style="color:var(--muted);font-size:13px;">กำลังโหลด...</div></div>
-      </div>
     `);
 
     // ตั้งวันที่เริ่มต้นเป็นวันนี้ ให้ผู้ใช้ไม่ต้องเลือกเองทุกครั้งถ้าเป็นวันเดียวกัน
     document.getElementById('maintSubStatusDate').value = new Date().toISOString().slice(0, 10);
-
-    loadMaintenanceHistory_(asset.Asset_ID);
 
     document.getElementById('maintForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -2090,9 +2093,7 @@
           cost: document.getElementById('maintCost').value
         });
         showToast('บันทึกประวัติการซ่อมบำรุงเรียบร้อย · สถานะทรัพย์สินเปลี่ยนเป็น "ซ่อมบำรุง"');
-        document.getElementById('maintForm').reset();
-        document.getElementById('maintSubStatusDate').value = new Date().toISOString().slice(0, 10);
-        await loadMaintenanceHistory_(asset.Asset_ID);
+        closeModal();
         await loadAssets();
       } catch (err) {
         showToast('บันทึกไม่สำเร็จ: ' + err.message);
@@ -2101,6 +2102,19 @@
         btn.textContent = 'บันทึก';
       }
     });
+  }
+
+  /**
+   * เปิด modal แสดงประวัติการซ่อมบำรุงของทรัพย์สินชิ้นนั้นอย่างเดียว (ดูอย่างเดียว
+   * ไม่มีฟอร์มบันทึกใหม่ปนอยู่) แยกออกมาจาก openMaintenanceModal() เพื่อไม่ให้
+   * modal บันทึกงานซ่อมรกไปด้วยประวัติยาวๆ ถ้าต้องการบันทึกงานใหม่ให้กดปุ่ม
+   * "ซ่อมบำรุง" แทน
+   */
+  function openMaintenanceHistoryModal(asset) {
+    openModal('ประวัติการซ่อมบำรุง: ' + asset.Asset_ID + ' · ' + asset.Name, `
+      <div class="history-list open" id="maintHistoryList"><div class="history-loading" style="color:var(--muted);font-size:13px;">กำลังโหลด...</div></div>
+    `);
+    loadMaintenanceHistory_(asset.Asset_ID);
   }
 
   /** โหลดประวัติการซ่อมบำรุงจาก server มาแสดงใน modal (เรียกซ้ำได้หลังบันทึกใหม่) */
@@ -2156,7 +2170,8 @@
         <div class="actions">
           <button type="button" class="btn btn-secondary" id="detailQrBtn">🔗 QR</button>
           <button type="button" class="btn btn-secondary" id="detailAssignBtn">${asset.Assigned_To ? '📤 รับคืน' : '📥 เบิก/มอบหมาย'}</button>
-          <button type="button" class="btn btn-secondary" id="detailMaintBtn">🛠️ ประวัติการซ่อมบำรุง</button>
+          <button type="button" class="btn btn-secondary" id="detailMaintBtn">🛠️ ซ่อมบำรุง</button>
+          <button type="button" class="btn btn-secondary" id="detailMaintHistoryBtn">📜 ประวัติการซ่อมบำรุง</button>
           <button type="button" class="btn btn-secondary" id="detailEditBtn">✏️ แก้ไข</button>
         </div>
         <div class="history-section">
@@ -2169,6 +2184,7 @@
     document.getElementById('detailQrBtn').addEventListener('click', () => openAssetQrModal(asset));
     document.getElementById('detailAssignBtn').addEventListener('click', () => openAssetAssignModal(asset));
     document.getElementById('detailMaintBtn').addEventListener('click', () => openMaintenanceModal(asset));
+    document.getElementById('detailMaintHistoryBtn').addEventListener('click', () => openMaintenanceHistoryModal(asset));
     document.getElementById('detailEditBtn').addEventListener('click', () => openAssetFormModal(asset));
 
     // ปุ่ม "ดูประวัติ" — โหลดจาก server แบบ lazy เหมือนในหน้ารายการทั่วไป
