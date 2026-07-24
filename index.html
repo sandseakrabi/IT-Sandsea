@@ -394,11 +394,40 @@
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   .filter-bar { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
-  .filter-chip {
+  .filter-chip, .chip {
     padding: 7px 14px; border-radius: 20px; background: var(--foam); color: var(--deep-sea);
     font-size: 13px; font-weight: 600; cursor: pointer; border: 1.5px solid transparent;
   }
-  .filter-chip.active { background: var(--deep-sea); color: var(--white); }
+  .filter-chip.active, .chip.active { background: var(--deep-sea); color: var(--white); }
+
+  /* ===================================================================
+     การ์ดทรัพย์สิน / วัสดุ (ระบบทรัพย์สิน IT) — ใช้โครงเดียวกับ .case-card
+     ตั้งใจให้หน้าตาเหมือนกันทั้งแอป ไม่ต้องเรียนรู้ pattern ใหม่ต่อแท็บ
+     =================================================================== */
+  .asset-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .asset-card .top-row { display: flex; justify-content: space-between; align-items: start; gap: 10px; margin-bottom: 6px; }
+  .asset-card .case-id { font-weight: 700; color: var(--deep-sea); font-size: 14px; }
+  .asset-card .meta { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+  .asset-card .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .pill-disposed { background: #ECECEC; color: #666666; }
+
+  /* ===================================================================
+     Modal กลาง ใช้ร่วมกันทุกฟอร์มของระบบทรัพย์สิน IT (เพิ่ม/แก้ไขทรัพย์สิน,
+     เบิก/คืน, เพิ่ม/แก้ไขวัสดุ, รับเข้า/เบิกออก, แสดง QR) ทำไมใช้ตัวเดียวร่วมกัน
+     แทนแยกโมดัลต่อฟอร์ม: ลดโค้ด CSS/HTML ซ้ำ และผู้ใช้เจอ pattern เดียวทุกที่
+     =================================================================== */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(15,59,87,0.55);
+    z-index: 9999; align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal-box {
+    background: #fff; border-radius: 14px; padding: 20px; max-width: 480px; width: 100%;
+    max-height: 88vh; overflow-y: auto;
+  }
+  .modal-box .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .modal-box .modal-header h3 { margin: 0; font-size: 17px; color: var(--deep-sea); }
+  .modal-close { background: none; border: none; font-size: 18px; color: var(--muted); cursor: pointer; padding: 4px 8px; }
 
   /* ===================================================================
      ปรับสำหรับจอแคบ (มือถือ) — ทำให้ปุ่มกดง่ายขึ้น และจัดเรียงเนื้อหา
@@ -422,6 +451,8 @@
 </style>
 <!-- ใช้วาดกราฟแนวโน้ม uptime AP/CCTV ในแท็บภาพรวม โหลดจาก CDN ไม่ต้องติดตั้งอะไรเพิ่ม -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<!-- ใช้สร้าง QR Code ติดทรัพย์สิน IT แต่ละชิ้น (แท็บ "ทรัพย์สิน") โหลดจาก CDN เช่นกัน -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -567,6 +598,11 @@
           เคสปัญหา
           <span class="badge" id="caseBadge">0</span>
         </div>
+        <div class="tab" data-panel="assets">ทรัพย์สิน</div>
+        <div class="tab" data-panel="supplies">
+          วัสดุสิ้นเปลือง
+          <span class="badge" id="supplyBadge">0</span>
+        </div>
       </div>
 
       <div class="content">
@@ -701,7 +737,57 @@
           <div id="caseList"></div>
         </div>
 
+        <!-- ===================================================================
+             แท็บ "ทรัพย์สิน" — อุปกรณ์ถาวร (คอม, จอ, เครื่องพิมพ์, กล้อง CCTV, เราเตอร์ ฯลฯ)
+             ติดตามผู้ถือครองปัจจุบันและมี QR Code ต่อชิ้นสำหรับสแกนดู/แก้ไข
+             =================================================================== -->
+        <div class="panel" id="panel-assets">
+          <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+            <input type="text" id="assetSearchInput" placeholder="ค้นหาชื่อ / Serial / ผู้ถือครอง"
+              style="flex:1; min-width:180px; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px;">
+            <button type="button" class="btn btn-primary" id="addAssetBtn">+ เพิ่มทรัพย์สิน</button>
+          </div>
+          <div class="filter-bar" id="assetFilterBar">
+            <div class="chip active" data-filter="all">ทั้งหมด</div>
+            <div class="chip" data-filter="ใช้งานได้">ใช้งานได้</div>
+            <div class="chip" data-filter="ซ่อมบำรุง">ซ่อมบำรุง</div>
+            <div class="chip" data-filter="ชำรุด">ชำรุด</div>
+            <div class="chip" data-filter="จำหน่ายแล้ว">จำหน่ายแล้ว</div>
+          </div>
+          <div id="assetList"></div>
+        </div>
+
+        <!-- ===================================================================
+             แท็บ "วัสดุสิ้นเปลือง" — สายแลน หมึกพิมพ์ อะไหล่ ฯลฯ
+             ติดตามจำนวนคงเหลือ พร้อมแจ้งเตือนอัตโนมัติเมื่อต่ำกว่าจุดสั่งซื้อขั้นต่ำ
+             =================================================================== -->
+        <div class="panel" id="panel-supplies">
+          <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+            <input type="text" id="supplySearchInput" placeholder="ค้นหาชื่อวัสดุ"
+              style="flex:1; min-width:180px; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px;">
+            <button type="button" class="btn btn-primary" id="addSupplyBtn">+ เพิ่มวัสดุ</button>
+          </div>
+          <div class="filter-bar" id="supplyFilterBar">
+            <div class="chip active" data-filter="all">ทั้งหมด</div>
+            <div class="chip" data-filter="low">ใกล้หมด</div>
+          </div>
+          <div id="supplyList"></div>
+        </div>
+
       </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================
+       Modal กลาง ใช้ร่วมกันทุกฟอร์มของระบบทรัพย์สิน IT — ดูคำอธิบายที่ CSS .modal-overlay
+       =================================================================== -->
+  <div class="modal-overlay" id="genericModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="modalTitle"></h3>
+        <button type="button" class="modal-close" id="modalCloseBtn">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
     </div>
   </div>
 
@@ -1115,9 +1201,13 @@
       loadApLogs(),
       loadCctvLogs(),
       loadBackupLogs(),
-      loadCases()
+      loadCases(),
+      loadAssets(),
+      loadSupplies()
     ]);
     document.getElementById('lastUpdated').textContent = 'อัพเดทล่าสุด ' + new Date().toLocaleTimeString('th-TH');
+    // ถ้ามีลิงก์สแกน QR ทรัพย์สินติดมา ให้เปิดฟอร์มทรัพย์สินชิ้นนั้นทันทีหลังข้อมูลพร้อม
+    handleAssetDeepLink_();
   }
 
   // ===================================================================
@@ -1591,6 +1681,587 @@
         navigator.clearAppBadge().catch(() => {});
       }
     }
+  }
+
+  // ===================================================================
+  // ส่วนที่ 11.5: หน้า IT — Modal กลาง (ใช้ร่วมกันทุกฟอร์มของระบบทรัพย์สิน IT)
+  // ทำไมทำเป็น modal กลางตัวเดียว: ฟอร์มของระบบทรัพย์สินมีหลายแบบ (เพิ่ม/แก้ไข
+  // ทรัพย์สิน, เบิก/คืน, เพิ่ม/แก้ไขวัสดุ, รับเข้า/เบิกออก, แสดง QR) ถ้าทำ modal
+  // แยกทุกแบบจะซ้ำโค้ด HTML/JS เยอะมาก จึงรวมเป็นกล่องเดียว สลับแค่เนื้อหาข้างใน
+  // ===================================================================
+  const genericModal = document.getElementById('genericModal');
+  const modalTitleEl = document.getElementById('modalTitle');
+  const modalBodyEl = document.getElementById('modalBody');
+
+  function openModal(title, bodyHtml) {
+    modalTitleEl.textContent = title;
+    modalBodyEl.innerHTML = bodyHtml;
+    genericModal.classList.add('show');
+  }
+  function closeModal() {
+    genericModal.classList.remove('show');
+    modalBodyEl.innerHTML = ''; // เคลียร์เนื้อหาทิ้ง กัน id ซ้ำชนกันตอนเปิดฟอร์มใหม่รอบถัดไป
+  }
+  document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+  // กดพื้นที่มืดรอบนอกกล่อง (ไม่ใช่ตัวกล่องเอง) ก็ปิดได้เหมือนกัน สะดวกบนมือถือ
+  genericModal.addEventListener('click', (e) => { if (e.target === genericModal) closeModal(); });
+
+  // ===================================================================
+  // ส่วนที่ 12: หน้า IT — ทรัพย์สิน IT (Assets)
+  // ===================================================================
+  let allAssetsCache = [];
+  let currentAssetFilter = 'all';
+
+  async function loadAssets() {
+    allAssetsCache = await apiGet('getAssets');
+    renderAssetList();
+  }
+
+  document.querySelectorAll('#assetFilterBar .chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#assetFilterBar .chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      currentAssetFilter = chip.dataset.filter;
+      renderAssetList();
+    });
+  });
+  document.getElementById('assetSearchInput').addEventListener('input', renderAssetList);
+
+  function assetStatusPillClass(status) {
+    if (status === 'ใช้งานได้') return 'pill-done';
+    if (status === 'ซ่อมบำรุง') return 'pill-progress';
+    if (status === 'ชำรุด') return 'pill-new';
+    return 'pill-disposed'; // จำหน่ายแล้ว
+  }
+
+  function renderAssetList() {
+    const keyword = document.getElementById('assetSearchInput').value.trim().toLowerCase();
+
+    let filtered = currentAssetFilter === 'all'
+      ? allAssetsCache
+      : allAssetsCache.filter(a => a.Status === currentAssetFilter);
+
+    if (keyword) {
+      filtered = filtered.filter(a =>
+        String(a.Name || '').toLowerCase().includes(keyword) ||
+        String(a.Serial_Number || '').toLowerCase().includes(keyword) ||
+        String(a.Assigned_To || '').toLowerCase().includes(keyword) ||
+        String(a.Asset_ID || '').toLowerCase().includes(keyword)
+      );
+    }
+
+    const container = document.getElementById('assetList');
+    if (!filtered.length) {
+      container.innerHTML = '<div class="empty-state">ไม่มีทรัพย์สินในหมวดนี้</div>';
+      return;
+    }
+
+    container.innerHTML = filtered.map(a => {
+      const holderLine = a.Assigned_To ? ' · 👤 ผู้ถือครอง: ' + escapeHtml(a.Assigned_To) : ' · 👤 อยู่ในคลัง (ยังไม่ได้เบิก)';
+      return `
+        <div class="asset-card" data-asset-id="${a.Asset_ID}">
+          <div class="top-row">
+            <div>
+              <div class="case-id">${a.Asset_ID} · ${escapeHtml(a.Name)}</div>
+              <div class="meta">${escapeHtml(a.Category)} · ${escapeHtml(a.Brand_Model || '-')} ${a.Serial_Number ? '· SN: ' + escapeHtml(a.Serial_Number) : ''}</div>
+              <div class="meta">📍 ${escapeHtml(a.Location || '-')}${holderLine}</div>
+            </div>
+            <span class="pill ${assetStatusPillClass(a.Status)}">${escapeHtml(a.Status)}</span>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn btn-secondary asset-qr-btn">🔗 QR</button>
+            <button type="button" class="btn btn-secondary asset-assign-btn">${a.Assigned_To ? '📤 รับคืน' : '📥 เบิก/มอบหมาย'}</button>
+            <button type="button" class="btn btn-secondary asset-edit-btn">✏️ แก้ไข</button>
+          </div>
+          <div class="history-section">
+            <button type="button" class="history-toggle">ดูประวัติ</button>
+            <div class="history-list"><div class="history-loading" style="color:var(--muted);font-size:13px;">กำลังโหลด...</div></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('.asset-qr-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const assetId = e.target.closest('.asset-card').dataset.assetId;
+        const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
+        openAssetQrModal(asset);
+      });
+    });
+
+    container.querySelectorAll('.asset-assign-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const assetId = e.target.closest('.asset-card').dataset.assetId;
+        const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
+        openAssetAssignModal(asset);
+      });
+    });
+
+    container.querySelectorAll('.asset-edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const assetId = e.target.closest('.asset-card').dataset.assetId;
+        const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
+        openAssetFormModal(asset);
+      });
+    });
+
+    // ปุ่ม "ดูประวัติ" — โหลดจาก server แบบ lazy เหมือนเคสปัญหา (โหลดตอนกดเท่านั้น)
+    container.querySelectorAll('.history-toggle').forEach(btn => {
+      let loaded = false;
+      btn.addEventListener('click', async () => {
+        const cardEl = btn.closest('.asset-card');
+        const assetId = cardEl.dataset.assetId;
+        const listEl = cardEl.querySelector('.history-list');
+        listEl.classList.toggle('open');
+        if (!loaded && listEl.classList.contains('open')) {
+          loaded = true;
+          try {
+            const history = await apiGet('getAssetHistory', { assetId });
+            listEl.innerHTML = renderHistoryItems_(history, h => `${h.Action}${h.Person ? ' · ' + escapeHtml(h.Person) : ''}`, h => h.Detail);
+          } catch (err) {
+            listEl.innerHTML = '<div style="color:var(--coral);font-size:13px;">โหลดประวัติไม่สำเร็จ: ' + err.message + '</div>';
+          }
+        }
+      });
+    });
+  }
+
+  // ใช้ร่วมกันทั้งประวัติทรัพย์สินและประวัติวัสดุ (โครงหน้าตาเดียวกัน ต่างแค่ข้อความ)
+  function renderHistoryItems_(items, titleFn, detailFn) {
+    if (!items || !items.length) {
+      return '<div style="color:var(--muted);font-size:13px;padding:4px 0;">ยังไม่มีประวัติ</div>';
+    }
+    return items.map(h => `
+      <div class="history-item">
+        <div class="history-time">${h.Timestamp}</div>
+        <div class="history-body">
+          <div class="history-status">${titleFn(h)}</div>
+          ${detailFn(h) ? `<div class="history-comment">${escapeHtml(detailFn(h))}</div>` : ''}
+          ${h.Changed_By ? `<div class="history-by">โดย: ${escapeHtml(h.Changed_By)}</div>` : ''}
+        </div>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('addAssetBtn').addEventListener('click', () => openAssetFormModal(null));
+
+  /**
+   * เปิดฟอร์มเพิ่ม/แก้ไขทรัพย์สิน asset=null คือโหมด "เพิ่มใหม่" ถ้าส่ง object
+   * เข้ามาคือโหมด "แก้ไข" (เติมค่าเดิมลงในฟอร์มให้อัตโนมัติ)
+   */
+  function openAssetFormModal(asset) {
+    const isEdit = !!asset;
+    const categories = ['คอมพิวเตอร์', 'จอภาพ', 'เครื่องพิมพ์', 'กล้อง CCTV', 'เราเตอร์/เน็ตเวิร์ค', 'อื่นๆ'];
+    const statuses = ['ใช้งานได้', 'ซ่อมบำรุง', 'ชำรุด', 'จำหน่ายแล้ว'];
+
+    openModal(isEdit ? 'แก้ไขทรัพย์สิน ' + asset.Asset_ID : 'เพิ่มทรัพย์สินใหม่', `
+      <form id="assetForm">
+        <div class="field"><label>ชื่อทรัพย์สิน *</label><input type="text" id="assetName" required value="${isEdit ? escapeHtml(asset.Name) : ''}"></div>
+        <div class="row2">
+          <div class="field"><label>หมวดหมู่ *</label>
+            <select id="assetCategory" required>
+              ${categories.map(c => `<option value="${c}" ${isEdit && asset.Category === c ? 'selected' : ''}>${c}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>สถานะ</label>
+            <select id="assetStatus">
+              ${statuses.map(s => `<option value="${s}" ${isEdit && asset.Status === s ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>ยี่ห้อ/รุ่น</label><input type="text" id="assetBrand" value="${isEdit ? escapeHtml(asset.Brand_Model || '') : ''}"></div>
+          <div class="field"><label>Serial Number</label><input type="text" id="assetSerial" value="${isEdit ? escapeHtml(asset.Serial_Number || '') : ''}"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>วันที่ซื้อ</label><input type="date" id="assetPurchaseDate" value="${isEdit ? (asset.Purchase_Date || '') : ''}"></div>
+          <div class="field"><label>ราคา (บาท)</label><input type="number" id="assetPrice" min="0" step="0.01" value="${isEdit ? (asset.Price || '') : ''}"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>รับประกันถึง</label><input type="date" id="assetWarranty" value="${isEdit ? (asset.Warranty_End || '') : ''}"></div>
+          <div class="field"><label>สถานที่/แผนก</label><input type="text" id="assetLocation" value="${isEdit ? escapeHtml(asset.Location || '') : ''}"></div>
+        </div>
+        <div class="field"><label>หมายเหตุ</label><textarea id="assetNotes">${isEdit ? escapeHtml(asset.Notes || '') : ''}</textarea></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="assetFormSubmitBtn">บันทึก</button>
+      </form>
+    `);
+
+    document.getElementById('assetForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('assetFormSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'กำลังบันทึก...';
+
+      const payload = {
+        name: document.getElementById('assetName').value.trim(),
+        category: document.getElementById('assetCategory').value,
+        status: document.getElementById('assetStatus').value,
+        brandModel: document.getElementById('assetBrand').value.trim(),
+        serialNumber: document.getElementById('assetSerial').value.trim(),
+        purchaseDate: document.getElementById('assetPurchaseDate').value,
+        price: document.getElementById('assetPrice').value,
+        warrantyEnd: document.getElementById('assetWarranty').value,
+        location: document.getElementById('assetLocation').value.trim(),
+        notes: document.getElementById('assetNotes').value.trim()
+      };
+
+      try {
+        if (isEdit) {
+          payload.assetId = asset.Asset_ID;
+          await apiPost('updateAsset', payload);
+          showToast('อัพเดททรัพย์สิน ' + asset.Asset_ID + ' เรียบร้อย');
+        } else {
+          const result = await apiPost('saveAsset', payload);
+          showToast('เพิ่มทรัพย์สิน ' + result.assetId + ' เรียบร้อย');
+        }
+        closeModal();
+        await loadAssets();
+      } catch (err) {
+        showToast('บันทึกไม่สำเร็จ: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'บันทึก';
+      }
+    });
+  }
+
+  /** เปิดฟอร์มเบิก/มอบหมาย หรือรับคืน แล้วแต่ว่าทรัพย์สินชิ้นนี้มีคนถือครองอยู่แล้วหรือไม่ */
+  function openAssetAssignModal(asset) {
+    const isReturn = !!asset.Assigned_To;
+    openModal(isReturn ? 'รับคืนทรัพย์สิน ' + asset.Asset_ID : 'เบิก/มอบหมายทรัพย์สิน ' + asset.Asset_ID, `
+      <form id="assignForm">
+        ${isReturn
+          ? `<p style="font-size:14px; margin-top:0;">ผู้ถือครองปัจจุบัน: <strong>${escapeHtml(asset.Assigned_To)}</strong></p>`
+          : `<div class="field"><label>ชื่อผู้รับ/ผู้ถือครอง *</label><input type="text" id="assignPerson" placeholder="ชื่อพนักงาน" required></div>`
+        }
+        <div class="field"><label>หมายเหตุ</label><input type="text" id="assignNote" placeholder="เช่น ใช้งานที่แผนกต้อนรับ"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="assignSubmitBtn">${isReturn ? 'ยืนยันรับคืน' : 'ยืนยันมอบหมาย'}</button>
+      </form>
+    `);
+
+    document.getElementById('assignForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('assignSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'กำลังบันทึก...';
+      try {
+        await apiPost('assignAsset', {
+          assetId: asset.Asset_ID,
+          action: isReturn ? 'return' : 'assign',
+          person: isReturn ? '' : document.getElementById('assignPerson').value.trim(),
+          note: document.getElementById('assignNote').value.trim()
+        });
+        showToast(isReturn ? 'รับคืนทรัพย์สินเรียบร้อย' : 'มอบหมายทรัพย์สินเรียบร้อย');
+        closeModal();
+        await loadAssets();
+      } catch (err) {
+        showToast('บันทึกไม่สำเร็จ: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = isReturn ? 'ยืนยันรับคืน' : 'ยืนยันมอบหมาย';
+      }
+    });
+  }
+
+  /**
+   * เปิด modal แสดง QR Code ของทรัพย์สินชิ้นนั้น QR เข้ารหัสเป็นลิงก์กลับมาที่
+   * แอปนี้เอง พร้อม ?asset=รหัส ต่อท้าย เพื่อให้สแกนแล้วเปิดแอปมาที่ทรัพย์สิน
+   * ชิ้นนั้นตรงๆได้เลย (ดู handleAssetDeepLink ท้ายไฟล์) — ยังต้อง login ตามปกติ
+   * เพราะ QR ไม่ได้ผูกกุญแจใดๆไว้ ไม่ใช่ช่องโหว่ด้านความปลอดภัย
+   */
+  function openAssetQrModal(asset) {
+    const qrUrl = location.origin + location.pathname + '?asset=' + encodeURIComponent(asset.Asset_ID);
+    openModal('QR Code: ' + asset.Asset_ID, `
+      <div style="text-align:center;">
+        <div id="qrCanvasHolder" style="display:flex; justify-content:center; margin-bottom:12px;"></div>
+        <div style="font-weight:700; font-size:15px;">${asset.Asset_ID}</div>
+        <div style="color:var(--muted); font-size:13px; margin-bottom:16px;">${escapeHtml(asset.Name)}</div>
+        <button type="button" class="btn btn-primary" id="qrPrintBtn" style="width:100%;">🖨️ พิมพ์ป้าย QR</button>
+      </div>
+    `);
+
+    // ทำไมต้องสร้าง QR หลัง openModal เสมอ (ไม่ใช่ตอนสร้าง HTML string ด้านบน):
+    // ไลบรารี QRCode.js ต้องมี element #qrCanvasHolder อยู่ใน DOM จริงแล้วก่อน
+    // ถึงจะวาดลงไปได้ ถ้าเรียกก่อน element ถูกแทรกเข้า DOM จะหาไม่เจอและพัง
+    new QRCode(document.getElementById('qrCanvasHolder'), {
+      text: qrUrl, width: 180, height: 180,
+      colorDark: '#0F3B57', colorLight: '#ffffff'
+    });
+
+    document.getElementById('qrPrintBtn').addEventListener('click', () => {
+      printAssetLabel_(document.getElementById('qrCanvasHolder'), asset.Asset_ID, asset.Name);
+    });
+  }
+
+  /**
+   * เปิดหน้าต่างใหม่พร้อมรูป QR + รหัส/ชื่อทรัพย์สิน แล้วสั่งพิมพ์ทันที ทำไมต้อง
+   * เปิดหน้าต่างแยก (ไม่ print หน้าเดิม): กันไม่ให้ CSS/เนื้อหาอื่นๆของแอปหลัก
+   * ติดไปในกระดาษพิมพ์ด้วย ป้ายจะได้มีแค่ QR กับข้อความที่จำเป็นจริงๆ
+   */
+  function printAssetLabel_(containerEl, assetId, assetName) {
+    const canvas = containerEl.querySelector('canvas');
+    const img = containerEl.querySelector('img');
+    const src = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
+    const w = window.open('', '_blank', 'width=380,height=480');
+    if (!w) { showToast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่'); return; }
+    w.document.write(`
+      <html><head><title>QR ${assetId}</title>
+      <style>
+        body { font-family: sans-serif; text-align: center; padding: 24px; }
+        img { width: 200px; height: 200px; }
+        .asset-id { font-weight: 700; font-size: 16px; margin-top: 10px; }
+        .asset-name { font-size: 13px; color: #555; margin-top: 2px; }
+      </style></head>
+      <body>
+        <img src="${src}" alt="QR ${assetId}">
+        <div class="asset-id">${assetId}</div>
+        <div class="asset-name">${escapeHtml(assetName)}</div>
+        <script>window.onload = function() { window.print(); };<\/script>
+      </body></html>
+    `);
+    w.document.close();
+  }
+
+  // ===================================================================
+  // ส่วนที่ 13: หน้า IT — วัสดุสิ้นเปลือง (Supplies)
+  // ===================================================================
+  let allSuppliesCache = [];
+  let currentSupplyFilter = 'all';
+
+  async function loadSupplies() {
+    allSuppliesCache = await apiGet('getSupplies');
+    renderSupplyList();
+    updateSupplyBadge();
+  }
+
+  document.querySelectorAll('#supplyFilterBar .chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#supplyFilterBar .chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      currentSupplyFilter = chip.dataset.filter;
+      renderSupplyList();
+    });
+  });
+  document.getElementById('supplySearchInput').addEventListener('input', renderSupplyList);
+
+  function isSupplyLow_(s) {
+    const min = Number(s.Min_Stock) || 0;
+    return min > 0 && Number(s.Qty_On_Hand) <= min;
+  }
+
+  function renderSupplyList() {
+    const keyword = document.getElementById('supplySearchInput').value.trim().toLowerCase();
+
+    let filtered = currentSupplyFilter === 'low'
+      ? allSuppliesCache.filter(isSupplyLow_)
+      : allSuppliesCache;
+
+    if (keyword) {
+      filtered = filtered.filter(s => String(s.Name || '').toLowerCase().includes(keyword));
+    }
+
+    const container = document.getElementById('supplyList');
+    if (!filtered.length) {
+      container.innerHTML = '<div class="empty-state">ไม่มีวัสดุในหมวดนี้</div>';
+      return;
+    }
+
+    container.innerHTML = filtered.map(s => {
+      const low = isSupplyLow_(s);
+      return `
+        <div class="asset-card" data-supply-id="${s.Supply_ID}">
+          <div class="top-row">
+            <div>
+              <div class="case-id">${s.Supply_ID} · ${escapeHtml(s.Name)}</div>
+              <div class="meta">${escapeHtml(s.Category || '-')} · 📍 ${escapeHtml(s.Location || '-')}</div>
+            </div>
+            <span class="pill ${low ? 'pill-new' : 'pill-done'}">${s.Qty_On_Hand} ${escapeHtml(s.Unit)}</span>
+          </div>
+          ${low ? `<div style="color:var(--coral); font-size:13px; font-weight:700; margin:6px 0 0;">⚠️ ต่ำกว่าจุดสั่งซื้อขั้นต่ำ (${s.Min_Stock} ${escapeHtml(s.Unit)})</div>` : ''}
+          <div class="actions">
+            <button type="button" class="btn btn-secondary supply-in-btn">➕ รับเข้า</button>
+            <button type="button" class="btn btn-secondary supply-out-btn">➖ เบิกออก</button>
+            <button type="button" class="btn btn-secondary supply-edit-btn">✏️ แก้ไข</button>
+          </div>
+          <div class="history-section">
+            <button type="button" class="history-toggle">ดูประวัติ</button>
+            <div class="history-list"><div class="history-loading" style="color:var(--muted);font-size:13px;">กำลังโหลด...</div></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('.supply-in-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => openSupplyStockModal(findSupply_(e), 'in'));
+    });
+    container.querySelectorAll('.supply-out-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => openSupplyStockModal(findSupply_(e), 'out'));
+    });
+    container.querySelectorAll('.supply-edit-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => openSupplyFormModal(findSupply_(e)));
+    });
+
+    container.querySelectorAll('.history-toggle').forEach(btn => {
+      let loaded = false;
+      btn.addEventListener('click', async () => {
+        const cardEl = btn.closest('.asset-card');
+        const supplyId = cardEl.dataset.supplyId;
+        const listEl = cardEl.querySelector('.history-list');
+        listEl.classList.toggle('open');
+        if (!loaded && listEl.classList.contains('open')) {
+          loaded = true;
+          try {
+            const history = await apiGet('getSupplyHistory', { supplyId });
+            listEl.innerHTML = renderHistoryItems_(
+              history,
+              h => `${h.Type} ${h.Qty > 0 ? h.Qty : ''} (คงเหลือ ${h.Balance_After})${h.Person ? ' · ' + escapeHtml(h.Person) : ''}`,
+              h => h.Note
+            );
+          } catch (err) {
+            listEl.innerHTML = '<div style="color:var(--coral);font-size:13px;">โหลดประวัติไม่สำเร็จ: ' + err.message + '</div>';
+          }
+        }
+      });
+    });
+  }
+
+  function findSupply_(e) {
+    const supplyId = e.target.closest('.asset-card').dataset.supplyId;
+    return allSuppliesCache.find(s => s.Supply_ID === supplyId);
+  }
+
+  function updateSupplyBadge() {
+    const lowCount = allSuppliesCache.filter(isSupplyLow_).length;
+    const badge = document.getElementById('supplyBadge');
+    if (lowCount > 0) {
+      badge.textContent = lowCount > 99 ? '99+' : lowCount;
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  document.getElementById('addSupplyBtn').addEventListener('click', () => openSupplyFormModal(null));
+
+  function openSupplyFormModal(supply) {
+    const isEdit = !!supply;
+    openModal(isEdit ? 'แก้ไขวัสดุ ' + supply.Supply_ID : 'เพิ่มวัสดุใหม่', `
+      <form id="supplyForm">
+        <div class="field"><label>ชื่อวัสดุ *</label><input type="text" id="supplyName" required value="${isEdit ? escapeHtml(supply.Name) : ''}"></div>
+        <div class="row2">
+          <div class="field"><label>หมวดหมู่</label><input type="text" id="supplyCategory" placeholder="เช่น สายไฟ, หมึกพิมพ์" value="${isEdit ? escapeHtml(supply.Category || '') : ''}"></div>
+          <div class="field"><label>หน่วยนับ *</label><input type="text" id="supplyUnit" placeholder="เช่น ชิ้น, ม้วน, กล่อง" required value="${isEdit ? escapeHtml(supply.Unit || '') : ''}"></div>
+        </div>
+        ${isEdit
+          ? `<div class="field"><label>จำนวนคงเหลือปัจจุบัน</label><input type="text" disabled value="${supply.Qty_On_Hand} ${escapeHtml(supply.Unit)} (ปรับยอดผ่านปุ่ม รับเข้า/เบิกออก เท่านั้น)"></div>`
+          : `<div class="field"><label>จำนวนคงเหลือเริ่มต้น</label><input type="number" id="supplyQty" min="0" value="0"></div>`
+        }
+        <div class="field"><label>จุดสั่งซื้อขั้นต่ำ (แจ้งเตือนเมื่อคงเหลือต่ำกว่านี้)</label><input type="number" id="supplyMin" min="0" value="${isEdit ? (supply.Min_Stock || 0) : 0}"></div>
+        <div class="field"><label>สถานที่จัดเก็บ</label><input type="text" id="supplyLocation" value="${isEdit ? escapeHtml(supply.Location || '') : ''}"></div>
+        <div class="field"><label>หมายเหตุ</label><textarea id="supplyNotes">${isEdit ? escapeHtml(supply.Notes || '') : ''}</textarea></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="supplyFormSubmitBtn">บันทึก</button>
+      </form>
+    `);
+
+    document.getElementById('supplyForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('supplyFormSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'กำลังบันทึก...';
+
+      const payload = {
+        name: document.getElementById('supplyName').value.trim(),
+        category: document.getElementById('supplyCategory').value.trim(),
+        unit: document.getElementById('supplyUnit').value.trim(),
+        minStock: document.getElementById('supplyMin').value,
+        location: document.getElementById('supplyLocation').value.trim(),
+        notes: document.getElementById('supplyNotes').value.trim()
+      };
+      if (!isEdit) payload.qty = document.getElementById('supplyQty').value;
+
+      try {
+        if (isEdit) {
+          payload.supplyId = supply.Supply_ID;
+          await apiPost('updateSupply', payload);
+          showToast('อัพเดทวัสดุ ' + supply.Supply_ID + ' เรียบร้อย');
+        } else {
+          const result = await apiPost('saveSupply', payload);
+          showToast('เพิ่มวัสดุ ' + result.supplyId + ' เรียบร้อย');
+        }
+        closeModal();
+        await loadSupplies();
+      } catch (err) {
+        showToast('บันทึกไม่สำเร็จ: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'บันทึก';
+      }
+    });
+  }
+
+  /** เปิดฟอร์มรับเข้า/เบิกออก type: 'in' หรือ 'out' */
+  function openSupplyStockModal(supply, type) {
+    const isIn = type === 'in';
+    openModal((isIn ? 'รับเข้า: ' : 'เบิกออก: ') + supply.Name, `
+      <p style="font-size:13px; color:var(--muted); margin-top:0;">คงเหลือปัจจุบัน: <strong>${supply.Qty_On_Hand} ${escapeHtml(supply.Unit)}</strong></p>
+      <form id="stockForm">
+        <div class="field"><label>จำนวน${isIn ? 'ที่รับเข้า' : 'ที่เบิกออก'} (${escapeHtml(supply.Unit)}) *</label>
+          <input type="number" id="stockQty" min="1" required></div>
+        <div class="field"><label>${isIn ? 'ผู้ส่งเข้า/แหล่งที่มา' : 'ผู้เบิก'}</label><input type="text" id="stockPerson"></div>
+        <div class="field"><label>หมายเหตุ</label><input type="text" id="stockNote"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="stockSubmitBtn">${isIn ? 'ยืนยันรับเข้า' : 'ยืนยันเบิกออก'}</button>
+      </form>
+    `);
+
+    document.getElementById('stockForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('stockSubmitBtn');
+      btn.disabled = true;
+      btn.textContent = 'กำลังบันทึก...';
+      try {
+        const result = await apiPost('adjustSupplyStock', {
+          supplyId: supply.Supply_ID,
+          type: type,
+          qty: document.getElementById('stockQty').value,
+          person: document.getElementById('stockPerson').value.trim(),
+          note: document.getElementById('stockNote').value.trim()
+        });
+        showToast(result.message);
+        closeModal();
+        await loadSupplies();
+      } catch (err) {
+        showToast('บันทึกไม่สำเร็จ: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = isIn ? 'ยืนยันรับเข้า' : 'ยืนยันเบิกออก';
+      }
+    });
+  }
+
+  // ===================================================================
+  // ส่วนที่ 13.5: QR Deep Link — เปิดแอปมาที่ทรัพย์สินชิ้นที่สแกนได้ทันที
+  // ทำไมต้องมี: ทรัพย์สินแต่ละชิ้นมี QR Code ติดอยู่ (ดู openAssetQrModal) เมื่อ
+  // ทีม IT สแกนด้วยกล้องมือถือ ลิงก์จะพา browser มาเปิดหน้านี้พร้อม query string
+  // "?asset=AS0001" ท้าย URL ฟังก์ชันนี้ตรวจจับค่านั้นตั้งแต่โหลดหน้าเว็บ แล้ว
+  // หลัง login สำเร็จ + โหลดข้อมูลเสร็จ จะพาไปที่แท็บ "ทรัพย์สิน" และเปิดฟอร์ม
+  // แก้ไขทรัพย์สินชิ้นนั้นให้อัตโนมัติ ไม่ต้องมานั่งค้นหาเอง
+  // ยังต้องกรอกรหัสผ่าน login ตามปกติเสมอ (query string ไม่ได้ข้ามการล็อกอิน)
+  // ===================================================================
+  const deepLinkAssetId = new URLSearchParams(location.search).get('asset');
+  let deepLinkHandled = false;
+
+  function handleAssetDeepLink_() {
+    if (!deepLinkAssetId || deepLinkHandled) return;
+    const asset = allAssetsCache.find(a => a.Asset_ID === deepLinkAssetId);
+    if (!asset) return; // ยังโหลดไม่เสร็จ หรือไม่พบรหัสนี้ — เงียบไว้ ไม่ต้องรบกวนผู้ใช้
+    deepLinkHandled = true;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelector('.tab[data-panel="assets"]').classList.add('active');
+    document.getElementById('panel-assets').classList.add('active');
+    openAssetFormModal(asset);
+  }
+
+  // ถ้ามีลิงก์สแกน QR ติดมา ให้ข้ามหน้าเลือกบทบาทไปหน้า IT ตรงๆเลย (ยังต้องกรอกรหัสผ่านตามปกติ)
+  if (deepLinkAssetId) {
+    showScreen('itScreen');
+    if (currentApiKey) showItApp();
   }
 
   // ===================================================================
