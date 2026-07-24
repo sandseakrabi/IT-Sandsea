@@ -2196,16 +2196,16 @@
     });
 
     document.getElementById('qrPrintBtn').addEventListener('click', () => {
-      printAssetLabel_(document.getElementById('qrCanvasHolder'), asset.Asset_ID, asset.Name);
+      printAssetLabel_(document.getElementById('qrCanvasHolder'), asset.Asset_ID, asset.Name, asset.Brand_Model);
     });
   }
 
   /**
-   * เปิดหน้าต่างใหม่พร้อมรูป QR + รหัส/ชื่อทรัพย์สิน แล้วสั่งพิมพ์ทันที ทำไมต้อง
-   * เปิดหน้าต่างแยก (ไม่ print หน้าเดิม): กันไม่ให้ CSS/เนื้อหาอื่นๆของแอปหลัก
+   * เปิดหน้าต่างใหม่พร้อมรูป QR + รหัส/ชื่อ/ยี่ห้อ-รุ่นทรัพย์สิน แล้วสั่งพิมพ์ทันที
+   * ทำไมต้องเปิดหน้าต่างแยก (ไม่ print หน้าเดิม): กันไม่ให้ CSS/เนื้อหาอื่นๆของแอปหลัก
    * ติดไปในกระดาษพิมพ์ด้วย ป้ายจะได้มีแค่ QR กับข้อความที่จำเป็นจริงๆ
    */
-  function printAssetLabel_(containerEl, assetId, assetName) {
+  function printAssetLabel_(containerEl, assetId, assetName, brandModel) {
     const canvas = containerEl.querySelector('canvas');
     const img = containerEl.querySelector('img');
     const src = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
@@ -2218,11 +2218,13 @@
         img { width: 200px; height: 200px; }
         .asset-id { font-weight: 700; font-size: 16px; margin-top: 10px; }
         .asset-name { font-size: 13px; color: #555; margin-top: 2px; }
+        .asset-brand { font-size: 13px; color: #555; }
       </style></head>
       <body>
         <img src="${src}" alt="QR ${assetId}">
         <div class="asset-id">${assetId}</div>
         <div class="asset-name">${escapeHtml(assetName)}</div>
+        <div class="asset-brand">${escapeHtml(brandModel || '-')}</div>
         <script>window.onload = function() { window.print(); };<\/script>
       </body></html>
     `);
