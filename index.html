@@ -1765,6 +1765,36 @@
     return div.innerHTML;
   }
 
+  /**
+   * จัดรูปแบบ MAC Address ให้อัตโนมัติตอนพิมพ์ — รับเฉพาะตัวเลข 0-9 และตัวอักษร
+   * A-F เท่านั้น (ตัวอื่นถูกตัดทิ้งเงียบๆ ไม่ต้องเตือน กันเผลอพิมพ์ผิดหรือวางค่า
+   * แปลกๆมาแล้วช่องพัง) แปลงเป็นตัวพิมพ์ใหญ่ให้เอง แล้วใส่ ":" คั่นทุก 2 ตัวอักษร
+   * ให้อัตโนมัติ พร้อมจำกัดไม่ให้เกิน 6 กลุ่ม (12 ตัวอักษร) ตามมาตรฐาน MAC Address
+   * สากล (เช่น AA:BB:CC:DD:EE:FF) พิมพ์เกินจะไม่ถูกรับเพิ่มอีกเลย
+   */
+  function formatMacAddressInput_(rawValue) {
+    const hex = String(rawValue || '').toUpperCase().replace(/[^0-9A-F]/g, '').slice(0, 12);
+    const groups = hex.match(/.{1,2}/g);
+    return groups ? groups.join(':') : '';
+  }
+
+  /**
+   * ผูก event ให้ช่องกรอก MAC Address จัดรูปแบบอัตโนมัติตาม formatMacAddressInput_()
+   * ทุกครั้งที่พิมพ์/วาง แยกเป็นฟังก์ชันเดียวเพราะช่อง MAC ถูกสร้างใหม่ทุกครั้งที่
+   * เปิดฟอร์มเพิ่ม/แก้ไขทรัพย์สิน (openAssetFormModal) ต้องผูกใหม่ทุกรอบ
+   */
+  function bindMacAddressAutoFormat_(inputEl) {
+    if (!inputEl) return;
+    inputEl.setAttribute('maxlength', '17'); // "AA:BB:CC:DD:EE:FF" = 17 ตัวอักษรพอดี
+    inputEl.value = formatMacAddressInput_(inputEl.value); // เผื่อค่าที่มีอยู่แล้ว (โหมดแก้ไข) ไม่ตรงฟอร์แมต
+    inputEl.addEventListener('input', () => {
+      inputEl.value = formatMacAddressInput_(inputEl.value);
+      // ผู้ใช้พิมพ์ MAC แบบเรียงต่อท้ายเป็นปกติอยู่แล้ว ย้าย cursor ไปท้ายสุดเสมอ
+      // หลังจัดรูปแบบใหม่ กันเคอร์เซอร์กระโดดไปกลางข้อความตอนระบบแทรก ":" ให้
+      inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+    });
+  }
+
   function caseStatusLabel(status) {
     return status === 'New' ? 'ใหม่' : status === 'In Progress' ? 'กำลังทำ' : 'เสร็จแล้ว';
   }
@@ -2118,6 +2148,9 @@
     }
     document.getElementById('assetCategory').addEventListener('change', toggleSpecFields);
     toggleSpecFields(); // เช็คทันทีตอนเปิดฟอร์ม เผื่อโหมดแก้ไขที่หมวดหมู่เดิมตรงกับกลุ่มใดกลุ่มหนึ่งอยู่แล้ว
+
+    // ล็อครูปแบบช่อง MAC Address ให้พิมพ์ได้แค่ตัวเลข/A-F แล้วใส่ ":" ให้อัตโนมัติ
+    bindMacAddressAutoFormat_(document.getElementById('assetMac'));
 
     document.getElementById('assetForm').addEventListener('submit', async (e) => {
       e.preventDefault();
