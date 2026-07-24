@@ -2008,7 +2008,7 @@
           ? `<p style="font-size:14px; margin-top:0;">ผู้ถือครองปัจจุบัน: <strong>${escapeHtml(asset.Assigned_To)}</strong></p>`
           : `<div class="field"><label>ชื่อผู้รับ/ผู้ถือครอง *</label><input type="text" id="assignPerson" placeholder="ชื่อพนักงาน" required></div>`
         }
-        <div class="field"><label>หมายเหตุ</label><input type="text" id="assignNote" placeholder="เช่น ใช้งานที่แผนกต้อนรับ"></div>
+        ${isReturn ? '' : `<div class="field"><label>แผนก</label><input type="text" id="assignDept" placeholder="เช่น ต้อนรับ, แม่บ้าน, ครัว, บัญชี"></div>`}
         <button type="submit" class="btn btn-primary" style="width:100%;" id="assignSubmitBtn">${isReturn ? 'ยืนยันรับคืน' : 'ยืนยันมอบหมาย'}</button>
       </form>
     `);
@@ -2023,7 +2023,7 @@
           assetId: asset.Asset_ID,
           assignAction: isReturn ? 'return' : 'assign',
           person: isReturn ? '' : document.getElementById('assignPerson').value.trim(),
-          note: document.getElementById('assignNote').value.trim()
+          department: isReturn ? '' : document.getElementById('assignDept').value.trim()
         });
         showToast(isReturn ? 'รับคืนทรัพย์สินเรียบร้อย' : 'มอบหมายทรัพย์สินเรียบร้อย');
         closeModal();
@@ -2181,7 +2181,8 @@
       <div style="text-align:center;">
         <div id="qrCanvasHolder" style="display:flex; justify-content:center; margin-bottom:12px;"></div>
         <div style="font-weight:700; font-size:15px;">${asset.Asset_ID}</div>
-        <div style="color:var(--muted); font-size:13px; margin-bottom:16px;">${escapeHtml(asset.Name)}</div>
+        <div style="color:var(--muted); font-size:13px;">${escapeHtml(asset.Name)}</div>
+        <div style="color:var(--muted); font-size:13px; margin-bottom:16px;">${escapeHtml(asset.Brand_Model || '-')}</div>
         <button type="button" class="btn btn-primary" id="qrPrintBtn" style="width:100%;">🖨️ พิมพ์ป้าย QR</button>
       </div>
     `);
