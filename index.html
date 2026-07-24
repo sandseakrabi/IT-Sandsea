@@ -2047,6 +2047,18 @@
       <form id="maintForm">
         <div class="field"><label>รายละเอียดการซ่อมบำรุง *</label><textarea id="maintDetail" required placeholder="เช่น เปลี่ยนพัดลม CPU, ล้างเครื่อง, อัพเดท Windows"></textarea></div>
         <div class="row2">
+          <div class="field"><label>สถานะย่อย *</label>
+            <select id="maintSubStatus" required>
+              <option value="">เลือกสถานะย่อย</option>
+              <option value="กำลังตรวจสอบ">กำลังตรวจสอบ</option>
+              <option value="ส่งเคลม">ส่งเคลม</option>
+              <option value="รับคืน">รับคืน</option>
+              <option value="ทดสอบก่อนส่งคืน">ทดสอบก่อนส่งคืน</option>
+            </select>
+          </div>
+          <div class="field"><label>วันที่ *</label><input type="date" id="maintSubStatusDate" required></div>
+        </div>
+        <div class="row2">
           <div class="field"><label>ผู้ดำเนินการ</label><input type="text" id="maintTechnician" placeholder="ชื่อช่าง/ทีม"></div>
           <div class="field"><label>ค่าใช้จ่าย (บาท)</label><input type="number" id="maintCost" min="0" step="0.01"></div>
         </div>
@@ -2057,6 +2069,9 @@
         <div class="history-list open" id="maintHistoryList"><div class="history-loading" style="color:var(--muted);font-size:13px;">กำลังโหลด...</div></div>
       </div>
     `);
+
+    // ตั้งวันที่เริ่มต้นเป็นวันนี้ ให้ผู้ใช้ไม่ต้องเลือกเองทุกครั้งถ้าเป็นวันเดียวกัน
+    document.getElementById('maintSubStatusDate').value = new Date().toISOString().slice(0, 10);
 
     loadMaintenanceHistory_(asset.Asset_ID);
 
@@ -2069,12 +2084,16 @@
         await apiPost('addMaintenanceRecord', {
           assetId: asset.Asset_ID,
           detail: document.getElementById('maintDetail').value.trim(),
+          subStatus: document.getElementById('maintSubStatus').value,
+          subStatusDate: document.getElementById('maintSubStatusDate').value,
           technician: document.getElementById('maintTechnician').value.trim(),
           cost: document.getElementById('maintCost').value
         });
-        showToast('บันทึกประวัติการซ่อมบำรุงเรียบร้อย');
+        showToast('บันทึกประวัติการซ่อมบำรุงเรียบร้อย · สถานะทรัพย์สินเปลี่ยนเป็น "ซ่อมบำรุง"');
         document.getElementById('maintForm').reset();
+        document.getElementById('maintSubStatusDate').value = new Date().toISOString().slice(0, 10);
         await loadMaintenanceHistory_(asset.Asset_ID);
+        await loadAssets();
       } catch (err) {
         showToast('บันทึกไม่สำเร็จ: ' + err.message);
       } finally {
@@ -2093,7 +2112,7 @@
       const history = await apiGet('getMaintenanceHistory', { assetId });
       listEl.innerHTML = renderHistoryItems_(
         history,
-        h => 'ซ่อมบำรุง' + (h.Cost ? ' · ' + Number(h.Cost).toLocaleString('th-TH') + ' บาท' : ''),
+        h => (h.Sub_Status || 'ซ่อมบำรุง') + (h.Sub_Status_Date ? ' · ' + h.Sub_Status_Date : '') + (h.Cost ? ' · ' + Number(h.Cost).toLocaleString('th-TH') + ' บาท' : ''),
         h => h.Detail + (h.Technician ? ' (ผู้ดำเนินการ: ' + h.Technician + ')' : '')
       );
     } catch (err) {
