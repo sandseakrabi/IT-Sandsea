@@ -2021,7 +2021,7 @@
       try {
         await apiPost('assignAsset', {
           assetId: asset.Asset_ID,
-          action: isReturn ? 'return' : 'assign',
+          assignAction: isReturn ? 'return' : 'assign',
           person: isReturn ? '' : document.getElementById('assignPerson').value.trim(),
           note: document.getElementById('assignNote').value.trim()
         });
