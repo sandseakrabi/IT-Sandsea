@@ -453,6 +453,15 @@
   }
   .filter-chip.active, .chip.active { background: var(--deep-sea); color: var(--white); }
 
+  /* แถบแบ่งหน้า (pagination) ใช้กับรายการยาวๆอย่างทรัพย์สิน (~200 ชิ้น) */
+  .pagination-bar { display: flex; justify-content: center; align-items: center; gap: 14px; margin: 16px 0 6px; }
+  .pagination-bar button {
+    padding: 7px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--white);
+    color: var(--deep-sea); font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .pagination-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pagination-bar .pagination-label { font-size: 13px; color: var(--muted); }
+
   /* ===================================================================
      การ์ดทรัพย์สิน / วัสดุ (ระบบทรัพย์สิน IT) — ใช้โครงเดียวกับ .case-card
      ตั้งใจให้หน้าตาเหมือนกันทั้งแอป ไม่ต้องเรียนรู้ pattern ใหม่ต่อแท็บ
@@ -821,7 +830,14 @@
               style="flex:1; min-width:180px; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px;">
             <button type="button" class="btn btn-primary" id="addAssetBtn">+ เพิ่มทรัพย์สิน</button>
           </div>
-          <div class="filter-bar" id="assetFilterBar">
+          <!-- แถวที่ 1: กรองตามหมวดหมู่ สร้างแบบไดนามิกจาก assetCategoriesCache
+               (ดู buildAssetCategoryFilterBar()) แทนปุ่มสถานะแบบเดิม -->
+          <div class="filter-bar" id="assetCategoryFilterBar"></div>
+          <!-- แถวที่ 2: กรองตามสถานะ ซ่อนไว้ก่อน โชว์เฉพาะตอนเลือกหมวดหมู่เจาะจง
+               แล้ว (ไม่ใช่ "ทั้งหมด") ทำไมต้องซ่อนไว้ก่อน: ทรัพย์สินเกือบ 200 ชิ้น
+               กรอง 2 ชั้นพร้อมกันตั้งแต่แรกจะงงว่าตอนนี้กรองอะไรอยู่ ให้เลือก
+               หมวดหมู่ก่อน แล้วค่อยขยับมาเลือกสถานะย่อยในหมวดนั้นทีหลัง -->
+          <div class="filter-bar" id="assetStatusFilterBar" style="display:none;">
             <div class="chip active" data-filter="all">ทั้งหมด</div>
             <div class="chip" data-filter="สำรอง">สำรอง</div>
             <div class="chip" data-filter="ใช้งานได้">ใช้งานได้</div>
@@ -830,6 +846,8 @@
             <div class="chip" data-filter="จำหน่ายแล้ว">จำหน่ายแล้ว</div>
           </div>
           <div id="assetList"></div>
+          <!-- แบ่งหน้า 10 รายการ/หน้า (เดิมโชว์รวดเดียวหมดทั้ง ~200 ชิ้น ยาวเกินไป) -->
+          <div class="pagination-bar" id="assetPaginationBar" style="display:none;"></div>
         </div>
 
         <!-- ===================================================================
@@ -1872,23 +1890,73 @@
   // ส่วนที่ 12: หน้า IT — ทรัพย์สิน IT (Assets)
   // ===================================================================
   let allAssetsCache = [];
-  let currentAssetFilter = 'all';
+  // เดิมกรองด้วยสถานะเป็นตัวหลัก (สำรอง/ใช้งานได้/ฯลฯ) เปลี่ยนมาเป็นกรองตาม
+  // หมวดหมู่เป็นชั้นแรกแทน (มีทรัพย์สินเกือบ 200 ชิ้น กระจายหลายหมวด กรองตาม
+  // หมวดก่อนช่วยหาของง่ายกว่าไล่ดูสถานะเฉยๆ) ส่วนสถานะกลายเป็นตัวกรองชั้นที่ 2
+  // ที่จะโผล่มาให้เลือกก็ต่อเมื่อเลือกหมวดหมู่เจาะจงแล้วเท่านั้น (ดู
+  // buildAssetCategoryFilterBar() และ toggleAssetStatusFilterBar())
+  let currentAssetCategoryFilter = 'all';
+  let currentAssetStatusFilter = 'all';
+  // แบ่งหน้ารายการทรัพย์สิน (เดิมโชว์รวดเดียวทั้งหมด ~200 ชิ้น ยาวเกินไป)
+  const ASSET_PAGE_SIZE = 10;
+  let currentAssetPage = 1;
 
   async function loadAssets() {
     allAssetsCache = await apiGet('getAssets');
+    buildAssetCategoryFilterBar();
     renderAssetList();
     renderStockList();
   }
 
-  document.querySelectorAll('#assetFilterBar .chip').forEach(chip => {
+  /**
+   * สร้างแถบชิพหมวดหมู่ทรัพย์สินแบบไดนามิกจาก assetCategoriesCache (โหลดตอน
+   * เปิดแอป และอัพเดททุกครั้งที่เพิ่มหมวดหมู่ใหม่จากฟอร์มเพิ่มทรัพย์สิน) เรียก
+   * ซ้ำได้ทุกครั้งที่ loadAssets() ปลอดภัย เพราะ build ใหม่ทั้งแถบ แต่ยังคง
+   * ตัวกรองที่เลือกไว้เดิม (currentAssetCategoryFilter) ไม่รีเซ็ตทิ้ง
+   */
+  function buildAssetCategoryFilterBar() {
+    const bar = document.getElementById('assetCategoryFilterBar');
+    const categories = (assetCategoriesCache || []).map(c => c.category);
+    const chips = [{ value: 'all', label: 'ทั้งหมด' }, ...categories.map(c => ({ value: c, label: c }))];
+
+    bar.innerHTML = chips.map(c =>
+      `<div class="chip ${currentAssetCategoryFilter === c.value ? 'active' : ''}" data-filter="${escapeHtml(c.value)}">${escapeHtml(c.label)}</div>`
+    ).join('');
+
+    bar.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        bar.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        currentAssetCategoryFilter = chip.dataset.filter;
+        currentAssetStatusFilter = 'all'; // เปลี่ยนหมวดหมู่แล้วเริ่มตัวกรองสถานะใหม่เสมอ
+        document.querySelectorAll('#assetStatusFilterBar .chip').forEach(c => c.classList.remove('active'));
+        document.querySelector('#assetStatusFilterBar .chip[data-filter="all"]').classList.add('active');
+        currentAssetPage = 1;
+        toggleAssetStatusFilterBar();
+        renderAssetList();
+      });
+    });
+  }
+
+  // โชว์แถบกรองสถานะเฉพาะตอนเลือกหมวดหมู่เจาะจงแล้ว (ไม่ใช่ "ทั้งหมด")
+  function toggleAssetStatusFilterBar() {
+    document.getElementById('assetStatusFilterBar').style.display =
+      currentAssetCategoryFilter === 'all' ? 'none' : 'flex';
+  }
+
+  document.querySelectorAll('#assetStatusFilterBar .chip').forEach(chip => {
     chip.addEventListener('click', () => {
-      document.querySelectorAll('#assetFilterBar .chip').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('#assetStatusFilterBar .chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
-      currentAssetFilter = chip.dataset.filter;
+      currentAssetStatusFilter = chip.dataset.filter;
+      currentAssetPage = 1;
       renderAssetList();
     });
   });
-  document.getElementById('assetSearchInput').addEventListener('input', renderAssetList);
+  document.getElementById('assetSearchInput').addEventListener('input', () => {
+    currentAssetPage = 1;
+    renderAssetList();
+  });
   document.getElementById('stockSearchInput').addEventListener('input', renderStockList);
 
   function assetStatusPillClass(status) {
@@ -1913,12 +1981,58 @@
   function renderAssetList() {
     const keyword = document.getElementById('assetSearchInput').value.trim().toLowerCase();
 
-    let filtered = currentAssetFilter === 'all'
+    let filtered = currentAssetCategoryFilter === 'all'
       ? allAssetsCache
-      : allAssetsCache.filter(a => a.Status === currentAssetFilter);
+      : allAssetsCache.filter(a => a.Category === currentAssetCategoryFilter);
+
+    if (currentAssetCategoryFilter !== 'all' && currentAssetStatusFilter !== 'all') {
+      filtered = filtered.filter(a => a.Status === currentAssetStatusFilter);
+    }
 
     filtered = filterAssetsByKeyword_(filtered, keyword);
-    renderAssetCardsInto_('assetList', filtered);
+
+    // แบ่งหน้า: ถ้าค้นหา/เปลี่ยนตัวกรองแล้วหน้าปัจจุบันเกินจำนวนหน้าที่มีจริง
+    // (เช่น อยู่หน้า 5 แล้วกรองเหลือแค่ 2 หน้า) ดึงกลับมาหน้าสุดท้ายที่มีจริง
+    const totalPages = Math.max(1, Math.ceil(filtered.length / ASSET_PAGE_SIZE));
+    if (currentAssetPage > totalPages) currentAssetPage = totalPages;
+
+    const start = (currentAssetPage - 1) * ASSET_PAGE_SIZE;
+    const pageItems = filtered.slice(start, start + ASSET_PAGE_SIZE);
+
+    renderAssetCardsInto_('assetList', pageItems);
+    renderAssetPaginationBar_(filtered.length, totalPages);
+  }
+
+  /**
+   * แถบเปลี่ยนหน้า (ก่อนหน้า / หน้า X จาก Y / ถัดไป) แสดงเฉพาะตอนมีมากกว่า 1
+   * หน้าเท่านั้น ทำไมทำแบบปุ่ม Prev/Next ธรรมดาแทนเลขหน้าเต็มรูปแบบ: ใช้งานบน
+   * มือถือง่ายกว่า และจำนวนรายการต่อหมวดไม่ได้เยอะมากจนต้องกระโดดข้ามหลายสิบหน้า
+   */
+  function renderAssetPaginationBar_(totalItems, totalPages) {
+    const bar = document.getElementById('assetPaginationBar');
+    if (totalItems === 0 || totalPages <= 1) {
+      bar.style.display = 'none';
+      bar.innerHTML = '';
+      return;
+    }
+    bar.style.display = 'flex';
+    bar.innerHTML = `
+      <button type="button" id="assetPrevPageBtn" ${currentAssetPage <= 1 ? 'disabled' : ''}>← ก่อนหน้า</button>
+      <span class="pagination-label">หน้า ${currentAssetPage} จาก ${totalPages} (ทั้งหมด ${totalItems} รายการ)</span>
+      <button type="button" id="assetNextPageBtn" ${currentAssetPage >= totalPages ? 'disabled' : ''}>ถัดไป →</button>
+    `;
+    document.getElementById('assetPrevPageBtn').addEventListener('click', () => {
+      if (currentAssetPage > 1) {
+        currentAssetPage--;
+        renderAssetList();
+        document.getElementById('assetList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+    document.getElementById('assetNextPageBtn').addEventListener('click', () => {
+      currentAssetPage++;
+      renderAssetList();
+      document.getElementById('assetList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   /**
