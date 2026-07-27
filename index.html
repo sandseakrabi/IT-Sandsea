@@ -1202,6 +1202,11 @@
   // ส่วนที่ 5: หน้า IT — ตัวแปรสถานะและฟังก์ชันเรียก Apps Script
   // ===================================================================
   let appConfig = {};
+  // รายชื่อหมวดหมู่ทรัพย์สิน + รหัสย่อ ดึงจาก getAssetCategories() ตอนเปิดแอป
+  // ใช้สร้าง dropdown หมวดหมู่แบบไดนามิกในฟอร์มเพิ่ม/แก้ไขทรัพย์สิน (ดู
+  // openAssetFormModal) แทนการ hardcode รายชื่อไว้ในโค้ด — พอมีหมวดหมู่ใหม่
+  // เพิ่มเข้ามาจากปุ่ม "+" ในฟอร์ม จะ refresh ตัวแปรนี้ให้ใหม่ทันที
+  let assetCategoriesCache = [];
   let currentCaseFilter = 'all';
   let allCasesCache = [];
   let currentCasePage = 1;
@@ -1293,6 +1298,9 @@
       appConfig = await apiGet('getConfig');
       document.getElementById('apTotalLabel').textContent = appConfig.Total_AP || '-';
       buildNvrInputs();
+      // โหลดหมวดหมู่ทรัพย์สินไว้ล่วงหน้า (ใช้ในฟอร์มเพิ่ม/แก้ไขทรัพย์สิน) ไม่ต้อง
+      // รอ เพราะไม่ block การแสดงผลหน้าอื่น แค่เก็บ cache ไว้ก่อน
+      assetCategoriesCache = await apiGet('getAssetCategories');
       await loadAllData();
       startPolling();
     } catch (err) {
@@ -2065,7 +2073,10 @@
    */
   function openAssetFormModal(asset) {
     const isEdit = !!asset;
-    const categories = ['PC', 'Notebook', 'Moniter', 'Mouse', 'Keyboard', 'ชุดMouse-Keyboard', 'Printer', 'NVR,CCTV', 'Router,Swicth', 'AP', 'UPS', 'อื่นๆ'];
+    // รายชื่อหมวดหมู่ดึงมาจาก assetCategoriesCache (โหลดตอนเปิดแอป และ refresh
+    // ทันทีทุกครั้งที่เพิ่มหมวดหมู่ใหม่ผ่านปุ่ม "+" ข้างช่องนี้) ไม่ hardcode อีกต่อไป
+    // เผื่อกรณี cache ยังไม่มาทัน (เช่น โหลดช้า) fallback เป็น array ว่างกันพัง
+    const categories = (assetCategoriesCache || []).map(c => c.category);
     // หมวดหมู่ที่ต้องโชว์ช่องสเปคเครื่อง (Device Name/IP/CPU/RAM/DDR/HDD-SSD/Windows)
     const categoriesWithSpecs = ['PC', 'Notebook'];
     // หมวดหมู่กล้อง/เครือข่ายที่ต้องโชว์ช่อง IP/MAC แทน
@@ -2077,9 +2088,25 @@
         <div class="field"><label>ชื่อทรัพย์สิน *</label><input type="text" id="assetName" required value="${isEdit ? escapeHtml(asset.Name) : ''}"></div>
         <div class="row2">
           <div class="field"><label>หมวดหมู่ *</label>
-            <select id="assetCategory" required>
-              ${categories.map(c => `<option value="${c}" ${isEdit && asset.Category === c ? 'selected' : ''}>${c}</option>`).join('')}
-            </select>
+            <div style="display:flex; gap:6px;">
+              <select id="assetCategory" required style="flex:1;">
+                ${categories.map(c => `<option value="${c}" ${isEdit && asset.Category === c ? 'selected' : ''}>${c}</option>`).join('')}
+              </select>
+              <button type="button" class="btn btn-secondary" id="toggleAddCategoryBtn" title="เพิ่มหมวดหมู่ใหม่" style="flex:0 0 auto; padding:0 14px;">+</button>
+            </div>
+            <!-- กล่องเพิ่มหมวดหมู่ใหม่ ซ่อนไว้ก่อน กดปุ่ม "+" ด้านบนถึงจะโชว์
+                 (ทำไมใส่ปุ่มนี้: เดิมหมวดหมู่ต้องแก้โค้ดหลังบ้านเท่านั้น พอมี
+                 ของประเภทใหม่เข้ามา (เช่น Tablet) ต้องรอ dev แก้ ASSET_CATEGORY_CODE_MAP_
+                 ทุกครั้ง ตอนนี้เพิ่มเองจากหน้าเว็บได้เลย ระบุชื่อ + รหัสย่อ
+                 (เช่น "Tablet" / "TL") แล้วรหัสทรัพย์สินจะออกเป็น IT-TL-0001
+                 และรันต่อเนื่องไปเรื่อยๆเหมือนหมวดอื่นทันที) -->
+            <div id="addCategoryBox" style="display:none; margin-top:8px; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--foam);">
+              <div class="row2">
+                <div class="field" style="margin-bottom:8px;"><label>ชื่อหมวดหมู่ใหม่</label><input type="text" id="newCategoryName" placeholder="เช่น Tablet"></div>
+                <div class="field" style="margin-bottom:8px;"><label>รหัสย่อ (A-Z/0-9 ไม่เกิน 5 ตัว)</label><input type="text" id="newCategoryCode" placeholder="เช่น TL" maxlength="5" style="text-transform:uppercase;"></div>
+              </div>
+              <button type="button" class="btn btn-primary" id="saveNewCategoryBtn" style="width:100%;">บันทึกหมวดหมู่ใหม่</button>
+            </div>
           </div>
           <div class="field"><label>สถานะ</label>
             <select id="assetStatus">
@@ -2148,6 +2175,50 @@
     }
     document.getElementById('assetCategory').addEventListener('change', toggleSpecFields);
     toggleSpecFields(); // เช็คทันทีตอนเปิดฟอร์ม เผื่อโหมดแก้ไขที่หมวดหมู่เดิมตรงกับกลุ่มใดกลุ่มหนึ่งอยู่แล้ว
+
+    // ปุ่ม "+" ข้างช่องหมวดหมู่: กดแล้วโชว์/ซ่อนกล่องเพิ่มหมวดหมู่ใหม่
+    document.getElementById('toggleAddCategoryBtn').addEventListener('click', () => {
+      const box = document.getElementById('addCategoryBox');
+      const showing = box.style.display !== 'none';
+      box.style.display = showing ? 'none' : 'block';
+      if (!showing) document.getElementById('newCategoryName').focus();
+    });
+
+    // บันทึกหมวดหมู่ใหม่ (ไม่ submit ฟอร์มหลัก เพราะเป็น type="button") ยิง
+    // addAssetCategory ไปหลังบ้าน ได้ลิสต์ล่าสุดกลับมาเก็บใน cache ทันที แล้ว
+    // เติม <option> ใหม่เข้า dropdown พร้อมเลือกให้อัตโนมัติ ไม่ต้องปิด/เปิดฟอร์มใหม่
+    document.getElementById('saveNewCategoryBtn').addEventListener('click', async () => {
+      const nameInput = document.getElementById('newCategoryName');
+      const codeInput = document.getElementById('newCategoryCode');
+      const name = nameInput.value.trim();
+      const code = codeInput.value.trim().toUpperCase();
+      if (!name || !code) {
+        showToast('กรุณากรอกทั้งชื่อหมวดหมู่และรหัสย่อ');
+        return;
+      }
+      const btn = document.getElementById('saveNewCategoryBtn');
+      btn.disabled = true;
+      btn.textContent = 'กำลังบันทึก...';
+      try {
+        assetCategoriesCache = await apiPost('addAssetCategory', { category: name, code: code });
+        const select = document.getElementById('assetCategory');
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        option.selected = true;
+        select.appendChild(option);
+        toggleSpecFields();
+        nameInput.value = '';
+        codeInput.value = '';
+        document.getElementById('addCategoryBox').style.display = 'none';
+        showToast('เพิ่มหมวดหมู่ "' + name + '" (รหัส ' + code + ') เรียบร้อย');
+      } catch (err) {
+        showToast('เพิ่มหมวดหมู่ไม่สำเร็จ: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'บันทึกหมวดหมู่ใหม่';
+      }
+    });
 
     // ล็อครูปแบบช่อง MAC Address ให้พิมพ์ได้แค่ตัวเลข/A-F แล้วใส่ ":" ให้อัตโนมัติ
     bindMacAddressAutoFormat_(document.getElementById('assetMac'));
