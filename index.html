@@ -986,7 +986,7 @@
             <span><i style="background:var(--coral);"></i>NVR,CCTV</span>
           </div>
           <p style="font-size:12.5px; color:var(--muted); margin:-4px 0 10px;">
-            ลากจุดเพื่อจัดตำแหน่ง (บันทึกอัตโนมัติ) · กด IP เพื่อเปิดหน้า config · กดเส้นเชื่อมเพื่อลบ
+            ลากจุดเพื่อจัดตำแหน่ง (บันทึกอัตโนมัติ) · กดจุดเพื่อดูว่าเชื่อมกับใคร/พอร์ตไหน · กด IP เพื่อเปิดหน้า config · กดเส้นเชื่อมเพื่อลบ
           </p>
           <div class="netmap-scroll" id="netmapScroll">
             <div class="netmap-zoom-stage" id="netmapZoomStage">
@@ -3253,7 +3253,13 @@
       if (!dragging) return;
       dragging = false;
       el.classList.remove('dragging');
-      if (!moved) return; // แค่แตะ/คลิกเฉยๆ ไม่ได้ลาก ไม่ต้องบันทึก
+      if (!moved) {
+        // แค่แตะ/คลิกเฉยๆ ไม่ได้ลาก — โชว์ข้อมูลว่าจุดนี้เชื่อมกับใครบ้าง จากตำแหน่งไหน
+        // เสียบพอร์ตอะไร (แทนที่จะต้องไล่ตามเส้นด้วยตาซึ่งทับกันเยอะจนดูไม่ออก)
+        const node = networkMapNodes.find(n => String(n.assetId) === String(el.dataset.assetId));
+        if (node) showNetNodeInfo_(node);
+        return;
+      }
       const pos = networkNodePos_[el.dataset.assetId];
       try {
         await apiPost('saveNodePosition', { assetId: el.dataset.assetId, x: Math.round(pos.x), y: Math.round(pos.y) });
@@ -3263,16 +3269,61 @@
     });
   }
 
+  /** กดที่ตัวจุด (ไม่ได้ลาก) — โชว์ข้อมูลว่าจุดนี้เชื่อมกับใครบ้าง จากตำแหน่งไหน
+   *  เสียบพอร์ตอะไร แก้ปัญหาเส้นทับกันเยอะจนไล่ตามด้วยตาไม่ไหวว่าต่อไปไหน */
+  function showNetNodeInfo_(node) {
+    const related = networkMapLinks.filter(l =>
+      String(l.fromAssetId) === String(node.assetId) || String(l.toAssetId) === String(node.assetId));
+
+    const rows = related.map(l => {
+      const isFrom = String(l.fromAssetId) === String(node.assetId);
+      const otherId = isFrom ? l.toAssetId : l.fromAssetId;
+      const other = networkMapNodes.find(n => String(n.assetId) === String(otherId));
+      const otherName = other ? other.name : otherId;
+      const otherLoc = other && other.location ? other.location : 'ไม่ระบุตำแหน่ง';
+      const portLabel = l.label ? escapeHtml(l.label) : 'ไม่ระบุพอร์ต/หมายเหตุ';
+      return `
+        <div style="padding:9px 10px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;">
+          <div style="font-weight:700; font-size:13px;">🔗 ${escapeHtml(otherName)} <span style="font-weight:400; color:var(--muted);">(${escapeHtml(String(otherId))})</span></div>
+          <div style="font-size:12px; color:var(--muted); margin-top:2px;">📍 ต้นทาง/ปลายทาง: ${escapeHtml(otherLoc)}</div>
+          <div style="font-size:12px; color:var(--muted); margin-top:2px;">🔌 พอร์ต/หมายเหตุ: <strong style="color:var(--ink);">${portLabel}</strong></div>
+        </div>`;
+    }).join('') || `<p style="font-size:13px; color:var(--muted);">ยังไม่มีเส้นเชื่อมกับอุปกรณ์นี้</p>`;
+
+    openModal(escapeHtml(node.name), `
+      <div style="font-size:12px; color:var(--muted); margin-bottom:12px; line-height:1.6;">
+        ${node.assetId} · 📍 ${escapeHtml(node.location || 'ไม่ระบุตำแหน่ง')}<br>
+        ${node.ip ? `🌐 ${escapeHtml(node.ip)}` : 'ไม่มี IP'}
+      </div>
+      <div style="font-size:13px; font-weight:700; margin-bottom:8px;">เชื่อมต่อกับ ${related.length} จุด</div>
+      ${rows}
+    `);
+  }
+
   /** ยืนยันก่อนลบเส้นเชื่อม (กดที่เส้นบนแผนผัง) */
   function confirmDeleteNetworkLink_(link) {
-    const fromNode = networkMapNodes.find(n => n.assetId === link.fromAssetId);
-    const toNode = networkMapNodes.find(n => n.assetId === link.toAssetId);
+    const fromNode = networkMapNodes.find(n => String(n.assetId) === String(link.fromAssetId));
+    const toNode = networkMapNodes.find(n => String(n.assetId) === String(link.toAssetId));
     const fromName = fromNode ? fromNode.name : link.fromAssetId;
     const toName = toNode ? toNode.name : link.toAssetId;
+    const fromLoc = fromNode && fromNode.location ? fromNode.location : 'ไม่ระบุตำแหน่ง';
+    const toLoc = toNode && toNode.location ? toNode.location : 'ไม่ระบุตำแหน่ง';
+    const portLabel = link.label ? escapeHtml(link.label) : 'ไม่ระบุพอร์ต/หมายเหตุ';
 
     openModal('ลบเส้นเชื่อม', `
-      <p style="font-size:14px; line-height:1.6;">ต้องการลบเส้นเชื่อมระหว่าง<br>
-        <strong>${escapeHtml(fromName)}</strong> ↔ <strong>${escapeHtml(toName)}</strong> ใช่หรือไม่?</p>
+      <div style="display:flex; justify-content:space-between; gap:10px; padding:10px; background:var(--sand); border-radius:8px; font-size:13px;">
+        <div>
+          <div style="font-weight:700;">${escapeHtml(fromName)}</div>
+          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">📍 ${escapeHtml(fromLoc)}</div>
+        </div>
+        <div style="align-self:center; color:var(--muted);">↔</div>
+        <div style="text-align:right;">
+          <div style="font-weight:700;">${escapeHtml(toName)}</div>
+          <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">📍 ${escapeHtml(toLoc)}</div>
+        </div>
+      </div>
+      <div style="font-size:13px; margin-top:10px;">🔌 พอร์ต/หมายเหตุ: <strong>${portLabel}</strong></div>
+      <p style="font-size:14px; line-height:1.6; margin-top:14px;">ต้องการลบเส้นเชื่อมนี้ใช่หรือไม่?</p>
       <div style="display:flex; gap:10px; margin-top:16px;">
         <button type="button" class="btn btn-secondary" id="cancelDeleteLinkBtn" style="flex:1;">ยกเลิก</button>
         <button type="button" class="btn btn-primary" id="confirmDeleteLinkBtn" style="flex:1; background:var(--coral);">ลบเส้นเชื่อม</button>
