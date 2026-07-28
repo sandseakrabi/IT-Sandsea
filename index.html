@@ -545,7 +545,11 @@
      คำนวณพิกัดใหม่ทุกครั้งที่ซูม */
   .netmap-zoom-stage { position: relative; }
   .netmap-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
-  .netmap-canvas svg { position: absolute; top: 0; left: 0; pointer-events: none; }
+  /* overflow: visible กันไม่ให้เส้นเชื่อม (netlink) ถูกตัดขาดเวลาจุดถูกลากออกนอก
+     กรอบ width/height เดิมของ svg — ค่า default ของ overflow บน <svg> ที่ฝังอยู่ใน
+     HTML คือ hidden (ต่างจาก div ทั่วไปที่ default visible) ถ้าไม่ประกาศทับไว้
+     เส้นส่วนที่เลยกรอบเดิมจะถูกครอบตัดมองไม่เห็น ดูเหมือนมี "ขอบ" กั้นอยู่ */
+  .netmap-canvas svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
   .netmap-canvas svg line.netlink {
     stroke: var(--ocean); stroke-width: 2; pointer-events: stroke; cursor: pointer;
   }
@@ -3160,6 +3164,25 @@
     applyNetmapZoom_();
   }
 
+  /** ขยายขนาด canvas/svg/stage ทันทีถ้าจุดถูกลากออกนอกกรอบที่คำนวณไว้ตอน render ล่าสุด
+   *  (เรียกทุกครั้งที่ลากจุด ไม่ใช่รอ render รอบถัดไป) ไม่งั้นแม้เส้นจะไม่โดนตัดแล้ว
+   *  (ดู overflow: visible ด้านบน) แต่กรอบเลื่อนดู (.netmap-scroll) จะยังไม่ขยายตาม
+   *  ทำให้เลื่อนจอตามจุดที่ลากออกไปไกลไม่ได้ */
+  function growNetmapCanvasIfNeeded_(x, y) {
+    const neededW = x + 200, neededH = y + 140;
+    if (neededW <= netmapCanvasSize_.w && neededH <= netmapCanvasSize_.h) return;
+    netmapCanvasSize_ = {
+      w: Math.max(netmapCanvasSize_.w, neededW),
+      h: Math.max(netmapCanvasSize_.h, neededH)
+    };
+    const canvas = document.getElementById('netmapCanvas');
+    canvas.style.width = netmapCanvasSize_.w + 'px';
+    canvas.style.height = netmapCanvasSize_.h + 'px';
+    document.getElementById('netmapSvg').setAttribute('width', netmapCanvasSize_.w);
+    document.getElementById('netmapSvg').setAttribute('height', netmapCanvasSize_.h);
+    applyNetmapZoom_();
+  }
+
   /** วาดเส้นเชื่อมทั้งหมดใหม่ (เรียกทุกครั้งที่ตำแหน่งจุดเปลี่ยน หรือรายการเส้นเชื่อมเปลี่ยน) */
   function drawNetworkLinks_() {
     const svg = document.getElementById('netmapSvg');
@@ -3222,6 +3245,7 @@
       el.style.left = newX + 'px';
       el.style.top = newY + 'px';
       networkNodePos_[el.dataset.assetId] = { x: newX, y: newY };
+      growNetmapCanvasIfNeeded_(newX, newY);
       drawNetworkLinks_();
     });
 
