@@ -3188,7 +3188,10 @@
     }
     const options = [...networkMapNodes]
       .sort((a, b) => a.name.localeCompare(b.name, 'th'))
-      .map(n => `<option value="${escapeHtml(n.assetId)}">${escapeHtml(n.name)} (${escapeHtml(n.assetId)})</option>`)
+      .map(n => {
+        const loc = n.location ? n.location : 'ไม่ระบุตำแหน่ง';
+        return `<option value="${escapeHtml(n.assetId)}">${escapeHtml(n.name)} (${escapeHtml(n.assetId)}) — ${escapeHtml(loc)}</option>`;
+      })
       .join('');
 
     openModal('เชื่อมต่ออุปกรณ์', `
