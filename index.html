@@ -520,15 +520,31 @@
      วาดด้วย <svg><line> ซ้อนทับอยู่ชั้นล่างสุด คำนวณตำแหน่งจากจุดศูนย์กลาง
      ของแต่ละ .netnode ทุกครั้งที่ตำแหน่งเปลี่ยน (ดู drawNetworkLinks() ใน JS)
      =================================================================== */
-  .netmap-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .netmap-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
   .netmap-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
   .netmap-legend span { display: inline-flex; align-items: center; gap: 5px; }
   .netmap-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  /* กลุ่มปุ่มซูม (−/100%/+/รีเซ็ต) ดันไปชิดขวาสุดของ toolbar ด้วย margin-left:auto */
+  .netmap-zoom-controls { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .netmap-zoom-controls button {
+    width: 36px; height: 36px; min-height: 0; padding: 0; font-size: 18px; font-weight: 700;
+    border: 1px solid var(--border); background: var(--white); color: var(--deep-sea);
+    border-radius: 8px; cursor: pointer; line-height: 1;
+  }
+  .netmap-zoom-controls button:active { background: var(--foam); }
+  .netmap-zoom-label { font-size: 12px; color: var(--muted); min-width: 40px; text-align: center; }
   .netmap-scroll {
     border: 1px solid var(--border); border-radius: 12px; background: var(--sand);
-    overflow: auto; height: 480px; position: relative; touch-action: pan-x pan-y;
+    overflow: auto; height: 65vh; min-height: 380px; max-height: 720px;
+    position: relative; touch-action: pan-x pan-y;
   }
-  .netmap-canvas { position: relative; }
+  /* .netmap-zoom-stage คือกล่องที่ "ขนาดจริงตามระดับซูม" (กว้าง/สูง = ขนาดจริง x zoom)
+     ทำหน้าที่บอกกล่อง .netmap-scroll ว่าต้องมีพื้นที่เลื่อนดูเท่าไหร่ตอนซูมเข้า
+     ส่วน .netmap-canvas ข้างในยังคงพิกัดจริง (ไม่ซูม) แล้วค่อยขยาย/ย่อด้วย
+     transform: scale() ทีเดียวทั้งกล่อง จุด+เส้นเชื่อมเลยขยับตามกันเป๊ะ ไม่ต้อง
+     คำนวณพิกัดใหม่ทุกครั้งที่ซูม */
+  .netmap-zoom-stage { position: relative; }
+  .netmap-canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
   .netmap-canvas svg { position: absolute; top: 0; left: 0; pointer-events: none; }
   .netmap-canvas svg line.netlink {
     stroke: var(--ocean); stroke-width: 2; pointer-events: stroke; cursor: pointer;
@@ -551,6 +567,20 @@
   .netnode .netnode-ip a:active { opacity: 0.6; }
   .netnode .netnode-loc { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
   .netnode .netnode-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+  /* โหมด "ขยายเต็มจอ" — ใช้ position:fixed ให้แผนผังลอยทับเต็มหน้าจอ (หลุดออกจาก
+     .content ที่ปกติจำกัดความกว้างไว้แค่ 760px) พื้นที่ลากจัดวางจะได้ใหญ่สุดเท่าที่
+     จอมีให้ ปุ่ม "ย่อกลับ" (netmapFullscreenBtn ตัวเดิม เปลี่ยนข้อความ) กดออกได้
+     ใช้ ID selector (#panel-networkmap.netmap-fullscreen) เพราะ specificity สูงกว่า
+     .panel.active เดิม จึงชนะโดยไม่ต้องใช้ !important */
+  #panel-networkmap.netmap-fullscreen {
+    position: fixed; inset: 0; z-index: 90; background: var(--white);
+    margin: 0; padding: 14px; max-width: none; display: flex; flex-direction: column;
+  }
+  #panel-networkmap.netmap-fullscreen .netmap-scroll {
+    flex: 1; height: auto; max-height: none; min-height: 0;
+  }
+  body.netmap-lock-scroll { overflow: hidden; }
 </style>
 <!-- ใช้วาดกราฟแนวโน้ม uptime AP/CCTV ในแท็บภาพรวม โหลดจาก CDN ไม่ต้องติดตั้งอะไรเพิ่ม -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -938,6 +968,13 @@
           <div class="netmap-toolbar">
             <button type="button" class="btn btn-primary" id="addNetworkLinkBtn">🔗 เชื่อมต่ออุปกรณ์</button>
             <button type="button" class="btn btn-secondary" id="refreshNetworkMapBtn">🔄 รีเฟรช</button>
+            <button type="button" class="btn btn-secondary" id="netmapFullscreenBtn">⛶ ขยายเต็มจอ</button>
+            <div class="netmap-zoom-controls">
+              <button type="button" id="netmapZoomOutBtn" title="ซูมออก">−</button>
+              <span class="netmap-zoom-label" id="netmapZoomLabel">100%</span>
+              <button type="button" id="netmapZoomInBtn" title="ซูมเข้า">+</button>
+              <button type="button" id="netmapZoomResetBtn" title="รีเซ็ตเป็น 100%">⟳</button>
+            </div>
           </div>
           <div class="netmap-legend">
             <span><i style="background:var(--ocean);"></i>AP</span>
@@ -948,8 +985,10 @@
             ลากจุดเพื่อจัดตำแหน่ง (บันทึกอัตโนมัติ) · กด IP เพื่อเปิดหน้า config · กดเส้นเชื่อมเพื่อลบ
           </p>
           <div class="netmap-scroll" id="netmapScroll">
-            <div class="netmap-canvas" id="netmapCanvas">
-              <svg id="netmapSvg"></svg>
+            <div class="netmap-zoom-stage" id="netmapZoomStage">
+              <div class="netmap-canvas" id="netmapCanvas">
+                <svg id="netmapSvg"></svg>
+              </div>
             </div>
           </div>
           <div class="empty-state" id="netmapEmptyState" style="display:none;">
@@ -2998,6 +3037,9 @@
   let networkMapNodes = [];   // ข้อมูลดิบจาก server (ชื่อ/IP/สถานะ/ฯลฯ)
   let networkMapLinks = [];   // ข้อมูลดิบจาก server (เส้นเชื่อม)
   let networkNodePos_ = {};   // assetId -> {x, y} ตำแหน่งปัจจุบันบนแผนผัง (in-memory)
+  let netmapZoom = 1;         // ระดับซูมปัจจุบัน (1 = 100%) ปรับด้วยปุ่ม +/− หรือ Ctrl+scroll
+  let netmapCanvasSize_ = { w: 700, h: 480 }; // ขนาดผืนผ้าใบ "จริง" (ไม่คูณซูม) อัปเดตทุกครั้งที่ render
+  const NETMAP_ZOOM_MIN_ = 0.3, NETMAP_ZOOM_MAX_ = 2.5, NETMAP_ZOOM_STEP_ = 0.1;
 
   async function loadNetworkMap() {
     const data = await apiGet('getNetworkMap');
@@ -3038,13 +3080,14 @@
     document.getElementById('netmapScroll').style.display = networkMapNodes.length ? 'block' : 'none';
     if (!networkMapNodes.length) return;
 
-    // ขนาดพื้นที่วาดจริง ต้องกว้าง/สูงพอให้ครอบคลุมจุดที่อยู่ไกลสุด (เผื่อผู้ใช้ลากออกไปไกลๆ)
+    // ขนาดพื้นที่วาดจริง (พิกัดจริง ยังไม่คูณซูม) ต้องกว้าง/สูงพอให้ครอบคลุมจุดที่อยู่ไกลสุด
     let maxX = 700, maxY = 480;
     networkMapNodes.forEach(n => {
       const p = networkNodePos_[n.assetId];
       maxX = Math.max(maxX, p.x + 200);
       maxY = Math.max(maxY, p.y + 140);
     });
+    netmapCanvasSize_ = { w: maxX, h: maxY };
     canvas.style.width = maxX + 'px';
     canvas.style.height = maxY + 'px';
     document.getElementById('netmapSvg').setAttribute('width', maxX);
@@ -3075,6 +3118,26 @@
     });
 
     drawNetworkLinks_();
+    applyNetmapZoom_();
+  }
+
+  /** ปรับขนาดที่แสดงจริงของแผนผังตามค่า netmapZoom (เรียกทุกครั้งที่ซูมเปลี่ยน หรือ render ใหม่)
+   *  หลักการ: .netmap-canvas (จุด+เส้นเชื่อมทั้งหมด) ใช้พิกัดจริงเสมอ ไม่ต้องคำนวณใหม่ตอนซูม
+   *  แค่ย่อ/ขยายทั้งกล่องด้วย CSS transform:scale() ส่วน .netmap-zoom-stage (กล่องนอก) ต้อง
+   *  ตั้งขนาด = ขนาดจริง x ระดับซูม เพื่อบอกกรอบเลื่อนดู (.netmap-scroll) ว่าพื้นที่เลื่อนมีเท่าไหร่ */
+  function applyNetmapZoom_() {
+    const canvas = document.getElementById('netmapCanvas');
+    const stage = document.getElementById('netmapZoomStage');
+    canvas.style.transform = `scale(${netmapZoom})`;
+    stage.style.width = (netmapCanvasSize_.w * netmapZoom) + 'px';
+    stage.style.height = (netmapCanvasSize_.h * netmapZoom) + 'px';
+    document.getElementById('netmapZoomLabel').textContent = Math.round(netmapZoom * 100) + '%';
+  }
+
+  /** ตั้งระดับซูมใหม่ (ปัดให้ลงตัวที่ 10% และไม่ให้เกินช่วง MIN–MAX ที่กำหนดไว้) */
+  function setNetmapZoom_(z) {
+    netmapZoom = Math.min(NETMAP_ZOOM_MAX_, Math.max(NETMAP_ZOOM_MIN_, Math.round(z * 10) / 10));
+    applyNetmapZoom_();
   }
 
   /** วาดเส้นเชื่อมทั้งหมดใหม่ (เรียกทุกครั้งที่ตำแหน่งจุดเปลี่ยน หรือรายการเส้นเชื่อมเปลี่ยน) */
@@ -3127,9 +3190,13 @@
 
     el.addEventListener('pointermove', (e) => {
       if (!dragging) return;
-      const dx = e.clientX - startX, dy = e.clientY - startY;
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      // rawDx/rawDy = ระยะที่นิ้ว/เมาส์ขยับจริงบนจอ (พิกเซลจริง) ใช้เช็คว่า "ลากจริงไหม"
+      const rawDx = e.clientX - startX, rawDy = e.clientY - startY;
+      if (Math.abs(rawDx) > 3 || Math.abs(rawDy) > 3) moved = true;
       if (!moved) return;
+      // หารด้วย netmapZoom เพื่อแปลงกลับเป็นระยะใน "พิกัดจริง" ของผืนผ้าใบ — ไม่งั้นตอนซูมเข้า
+      // จุดจะวิ่งเร็วกว่านิ้ว/เมาส์ และตอนซูมออกจุดจะวิ่งช้ากว่า
+      const dx = rawDx / netmapZoom, dy = rawDy / netmapZoom;
       const newX = Math.max(0, origX + dx);
       const newY = Math.max(0, origY + dy);
       el.style.left = newX + 'px';
@@ -3227,6 +3294,34 @@
   document.getElementById('refreshNetworkMapBtn').addEventListener('click', async () => {
     await loadNetworkMap();
     showToast('รีเฟรช Network Map แล้ว');
+  });
+
+  // ---- ปุ่มซูมเข้า/ออก/รีเซ็ต ----
+  document.getElementById('netmapZoomInBtn').addEventListener('click', () => setNetmapZoom_(netmapZoom + NETMAP_ZOOM_STEP_));
+  document.getElementById('netmapZoomOutBtn').addEventListener('click', () => setNetmapZoom_(netmapZoom - NETMAP_ZOOM_STEP_));
+  document.getElementById('netmapZoomResetBtn').addEventListener('click', () => setNetmapZoom_(1));
+
+  // ---- ซูมด้วย Ctrl + scroll (เมาส์/trackpad บนคอม) — ไม่ใช้ Ctrl ปล่อยให้เลื่อนจอปกติ ----
+  document.getElementById('netmapScroll').addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    setNetmapZoom_(netmapZoom + (e.deltaY < 0 ? NETMAP_ZOOM_STEP_ : -NETMAP_ZOOM_STEP_));
+  }, { passive: false });
+
+  // ---- ปุ่ม "ขยายเต็มจอ" — สลับให้แผนผังลอยทับเต็มหน้าจอ เพื่อพื้นที่ลากจัดวางที่ใหญ่ขึ้นมาก ----
+  function toggleNetmapFullscreen_() {
+    const panel = document.getElementById('panel-networkmap');
+    const btn = document.getElementById('netmapFullscreenBtn');
+    const isFull = panel.classList.toggle('netmap-fullscreen');
+    document.body.classList.toggle('netmap-lock-scroll', isFull);
+    btn.textContent = isFull ? '↙ ย่อกลับ' : '⛶ ขยายเต็มจอ';
+  }
+  document.getElementById('netmapFullscreenBtn').addEventListener('click', toggleNetmapFullscreen_);
+  // กด Esc เพื่อย่อกลับได้เร็วๆ ตอนอยู่โหมดเต็มจอ (สะดวกบนคอม)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.getElementById('panel-networkmap').classList.contains('netmap-fullscreen')) {
+      toggleNetmapFullscreen_();
+    }
   });
 
   // ===================================================================
