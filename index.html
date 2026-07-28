@@ -511,6 +511,46 @@
     min-height: 44px;
   }
   .filter-chip, .pill { min-height: 0; }
+
+  /* ===================================================================
+     เมนู "Network Map" — แผนผังการเชื่อมต่อ AP / Router,Switch / NVR,CCTV
+     โครงสร้าง: กล่องนอก (.netmap-scroll) เลื่อนดูได้ทั้งแนวนอน-แนวตั้ง (พื้นที่
+     วาดจริงกว้างกว่าจอมือถือมาก) ข้างในมี .netmap-canvas (พื้นที่จริงที่วาง
+     จุด+เส้น) จุดแต่ละจุดเป็น <div class="netnode"> ลากได้อิสระ ส่วนเส้นเชื่อม
+     วาดด้วย <svg><line> ซ้อนทับอยู่ชั้นล่างสุด คำนวณตำแหน่งจากจุดศูนย์กลาง
+     ของแต่ละ .netnode ทุกครั้งที่ตำแหน่งเปลี่ยน (ดู drawNetworkLinks() ใน JS)
+     =================================================================== */
+  .netmap-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .netmap-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .netmap-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .netmap-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  .netmap-scroll {
+    border: 1px solid var(--border); border-radius: 12px; background: var(--sand);
+    overflow: auto; height: 480px; position: relative; touch-action: pan-x pan-y;
+  }
+  .netmap-canvas { position: relative; }
+  .netmap-canvas svg { position: absolute; top: 0; left: 0; pointer-events: none; }
+  .netmap-canvas svg line.netlink {
+    stroke: var(--ocean); stroke-width: 2; pointer-events: stroke; cursor: pointer;
+  }
+  .netmap-canvas svg line.netlink:hover { stroke: var(--coral); stroke-width: 3; }
+  .netmap-canvas svg text.netlink-label {
+    fill: var(--muted); font-size: 10px; pointer-events: none;
+  }
+  .netnode {
+    position: absolute; width: 148px; background: var(--white); border-radius: 10px;
+    border: 1px solid var(--border); border-left: 4px solid var(--ocean);
+    box-shadow: 0 1px 6px rgba(15,59,87,0.10); padding: 8px 10px; cursor: grab;
+    user-select: none; touch-action: none; z-index: 2;
+  }
+  .netnode.dragging { cursor: grabbing; box-shadow: 0 4px 14px rgba(15,59,87,0.22); z-index: 3; }
+  .netnode .netnode-title { font-size: 12.5px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 5px; }
+  .netnode .netnode-id { font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+  .netnode .netnode-ip { font-size: 12px; margin-top: 5px; }
+  .netnode .netnode-ip a { color: var(--ocean); font-weight: 700; text-decoration: none; }
+  .netnode .netnode-ip a:active { opacity: 0.6; }
+  .netnode .netnode-loc { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+  .netnode .netnode-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 </style>
 <!-- ใช้วาดกราฟแนวโน้ม uptime AP/CCTV ในแท็บภาพรวม โหลดจาก CDN ไม่ต้องติดตั้งอะไรเพิ่ม -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -685,6 +725,7 @@
             <span class="tab-icon">📦</span>วัสดุสิ้นเปลือง
             <span class="badge" id="supplyBadge">0</span>
           </div>
+          <div class="tab" data-panel="networkmap"><span class="tab-icon">🗺️</span>Network Map</div>
         </div>
       </nav>
 
@@ -884,6 +925,37 @@
             <div class="chip" data-filter="low">ใกล้หมด</div>
           </div>
           <div id="supplyList"></div>
+        </div>
+
+        <!-- ===================================================================
+             แท็บ "Network Map" — แผนผังการเชื่อมต่อของอุปกรณ์เครือข่าย (AP,
+             Router/Switch, NVR/CCTV) จุดบนแผนผังดึงมาจากรายการ "ทรัพย์สิน" เดิม
+             ทั้งหมด (เฉพาะ 3 หมวดนี้) ลากจุดจัดตำแหน่งได้ กดปุ่มเพื่อเพิ่ม/ลบ
+             เส้นเชื่อมได้ กด IP ที่จุดใดก็ได้เพื่อเปิดเบราว์เซอร์ไป config อุปกรณ์
+             ตัวนั้นทันที
+             =================================================================== -->
+        <div class="panel" id="panel-networkmap">
+          <div class="netmap-toolbar">
+            <button type="button" class="btn btn-primary" id="addNetworkLinkBtn">🔗 เชื่อมต่ออุปกรณ์</button>
+            <button type="button" class="btn btn-secondary" id="refreshNetworkMapBtn">🔄 รีเฟรช</button>
+          </div>
+          <div class="netmap-legend">
+            <span><i style="background:var(--ocean);"></i>AP</span>
+            <span><i style="background:var(--amber);"></i>Router,Switch</span>
+            <span><i style="background:var(--coral);"></i>NVR,CCTV</span>
+          </div>
+          <p style="font-size:12.5px; color:var(--muted); margin:-4px 0 10px;">
+            ลากจุดเพื่อจัดตำแหน่ง (บันทึกอัตโนมัติ) · กด IP เพื่อเปิดหน้า config · กดเส้นเชื่อมเพื่อลบ
+          </p>
+          <div class="netmap-scroll" id="netmapScroll">
+            <div class="netmap-canvas" id="netmapCanvas">
+              <svg id="netmapSvg"></svg>
+            </div>
+          </div>
+          <div class="empty-state" id="netmapEmptyState" style="display:none;">
+            ยังไม่มีอุปกรณ์เครือข่าย (AP / Router,Switch / NVR,CCTV) ในระบบทรัพย์สิน<br>
+            เพิ่มทรัพย์สินหมวดเหล่านี้ก่อน แล้วจะมาโผล่บนแผนผังนี้ให้อัตโนมัติ
+          </div>
         </div>
 
       </div>
@@ -1358,7 +1430,8 @@
       loadBackupLogs(),
       loadCases(),
       loadAssets(),
-      loadSupplies()
+      loadSupplies(),
+      loadNetworkMap()
     ]);
     document.getElementById('lastUpdated').textContent = 'อัพเดทล่าสุด ' + new Date().toLocaleTimeString('th-TH');
     // ถ้ามีลิงก์สแกน QR ทรัพย์สินติดมา ให้เปิดฟอร์มทรัพย์สินชิ้นนั้นทันทีหลังข้อมูลพร้อม
@@ -2901,6 +2974,257 @@
     showScreen('itScreen');
     if (currentApiKey) showItApp();
   }
+
+  // ===================================================================
+  // ส่วนที่ 13.6: หน้า IT — Network Map
+  // -------------------------------------------------------------------
+  // จุด (node) บนแผนผังคือทรัพย์สินหมวด AP / Router,Swicth / NVR,CCTV ที่มี
+  // อยู่แล้วในระบบทรัพย์สิน (ไม่ได้สร้างรายการอุปกรณ์แยกใหม่) เก็บเพิ่มแค่
+  // "ตำแหน่งบนแผนผัง" (x,y) กับ "เส้นเชื่อม" (ใครต่อกับใคร) ที่ฝั่ง server
+  // (ดู NetworkMap.gs) ทุกครั้งที่ลากจุดจะบันทึกตำแหน่งอัตโนมัติทันทีที่ปล่อยนิ้ว/เมาส์
+  // ===================================================================
+  const NETWORK_CATEGORY_META_ = {
+    'AP': { icon: '📶', color: 'var(--ocean)' },
+    'Router,Swicth': { icon: '🔀', color: 'var(--amber)' },
+    'NVR,CCTV': { icon: '🎥', color: 'var(--coral)' }
+  };
+  // ขนาด "ช่อง" ที่ใช้จัดตำแหน่งเริ่มต้นให้จุดที่ยังไม่เคยถูกลากวางมาก่อน
+  // (เรียงเป็นตารางตามหมวดหมู่ทีละแถว) ผู้ใช้ลากจัดใหม่ได้เสมอในภายหลัง
+  const NETMAP_COL_WIDTH_ = 180;
+  const NETMAP_ROW_HEIGHT_ = 120;
+  const NETMAP_COLS_ = 5;
+  const NETMAP_PADDING_ = 30;
+
+  let networkMapNodes = [];   // ข้อมูลดิบจาก server (ชื่อ/IP/สถานะ/ฯลฯ)
+  let networkMapLinks = [];   // ข้อมูลดิบจาก server (เส้นเชื่อม)
+  let networkNodePos_ = {};   // assetId -> {x, y} ตำแหน่งปัจจุบันบนแผนผัง (in-memory)
+
+  async function loadNetworkMap() {
+    const data = await apiGet('getNetworkMap');
+    networkMapNodes = data.nodes || [];
+    networkMapLinks = data.links || [];
+    layoutNetworkNodes_();
+    renderNetworkMap();
+  }
+
+  /** จัดตำแหน่งเริ่มต้น (ตาราง เรียงตามหมวดหมู่) ให้จุดที่ยังไม่เคยมีตำแหน่งบันทึกไว้ (x/y เป็น null) */
+  function layoutNetworkNodes_() {
+    networkNodePos_ = {};
+    const order = ['Router,Swicth', 'AP', 'NVR,CCTV'];
+    const sorted = [...networkMapNodes].sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
+    let i = 0;
+    sorted.forEach(n => {
+      if (n.x !== null && n.y !== null && !isNaN(n.x) && !isNaN(n.y)) {
+        networkNodePos_[n.assetId] = { x: n.x, y: n.y };
+      } else {
+        const col = i % NETMAP_COLS_;
+        const row = Math.floor(i / NETMAP_COLS_);
+        networkNodePos_[n.assetId] = {
+          x: NETMAP_PADDING_ + col * NETMAP_COL_WIDTH_,
+          y: NETMAP_PADDING_ + row * NETMAP_ROW_HEIGHT_
+        };
+        i++;
+      }
+    });
+  }
+
+  function renderNetworkMap() {
+    const canvas = document.getElementById('netmapCanvas');
+    const emptyState = document.getElementById('netmapEmptyState');
+    // ล้างจุดเดิมทิ้ง (เก็บ svg ไว้ วาดใหม่แยกใน drawNetworkLinks) ก่อนสร้างใหม่
+    canvas.querySelectorAll('.netnode').forEach(el => el.remove());
+
+    emptyState.style.display = networkMapNodes.length ? 'none' : 'block';
+    document.getElementById('netmapScroll').style.display = networkMapNodes.length ? 'block' : 'none';
+    if (!networkMapNodes.length) return;
+
+    // ขนาดพื้นที่วาดจริง ต้องกว้าง/สูงพอให้ครอบคลุมจุดที่อยู่ไกลสุด (เผื่อผู้ใช้ลากออกไปไกลๆ)
+    let maxX = 700, maxY = 480;
+    networkMapNodes.forEach(n => {
+      const p = networkNodePos_[n.assetId];
+      maxX = Math.max(maxX, p.x + 200);
+      maxY = Math.max(maxY, p.y + 140);
+    });
+    canvas.style.width = maxX + 'px';
+    canvas.style.height = maxY + 'px';
+    document.getElementById('netmapSvg').setAttribute('width', maxX);
+    document.getElementById('netmapSvg').setAttribute('height', maxY);
+
+    networkMapNodes.forEach(n => {
+      const meta = NETWORK_CATEGORY_META_[n.category] || { icon: '🔌', color: 'var(--muted)' };
+      const pos = networkNodePos_[n.assetId];
+      const dotColor = n.status === 'ใช้งานได้' ? 'var(--seagrass)'
+        : (n.status === 'ซ่อมบำรุง' ? 'var(--amber)' : (n.status === 'ชำรุด' ? 'var(--coral)' : 'var(--muted)'));
+
+      const el = document.createElement('div');
+      el.className = 'netnode';
+      el.dataset.assetId = n.assetId;
+      el.style.left = pos.x + 'px';
+      el.style.top = pos.y + 'px';
+      el.style.borderLeftColor = meta.color;
+      el.innerHTML = `
+        <div class="netnode-title"><span>${meta.icon}</span><span>${escapeHtml(n.name)}</span></div>
+        <div class="netnode-id"><span class="netnode-dot" style="background:${dotColor};"></span> ${escapeHtml(n.assetId)} · ${escapeHtml(n.status || '-')}</div>
+        <div class="netnode-ip">${n.ip
+          ? `<a href="http://${escapeHtml(n.ip)}" target="_blank" rel="noopener" title="เปิดหน้า config ของอุปกรณ์นี้">🌐 ${escapeHtml(n.ip)}</a>`
+          : '<span style="color:var(--muted);">ไม่มี IP</span>'}</div>
+        <div class="netnode-loc">📍 ${escapeHtml(n.location || '-')}</div>
+      `;
+      canvas.appendChild(el);
+      attachNetNodeDrag_(el);
+    });
+
+    drawNetworkLinks_();
+  }
+
+  /** วาดเส้นเชื่อมทั้งหมดใหม่ (เรียกทุกครั้งที่ตำแหน่งจุดเปลี่ยน หรือรายการเส้นเชื่อมเปลี่ยน) */
+  function drawNetworkLinks_() {
+    const svg = document.getElementById('netmapSvg');
+    svg.innerHTML = '';
+    networkMapLinks.forEach(link => {
+      const from = networkNodePos_[link.fromAssetId];
+      const to = networkNodePos_[link.toAssetId];
+      if (!from || !to) return;
+      // จุดศูนย์กลางโดยประมาณของการ์ด (กว้าง 148 + padding, สูงประมาณ 70)
+      const x1 = from.x + 74, y1 = from.y + 35, x2 = to.x + 74, y2 = to.y + 35;
+
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+      line.setAttribute('class', 'netlink');
+      line.addEventListener('click', () => confirmDeleteNetworkLink_(link));
+      svg.appendChild(line);
+
+      if (link.label) {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', (x1 + x2) / 2);
+        text.setAttribute('y', (y1 + y2) / 2 - 4);
+        text.setAttribute('class', 'netlink-label');
+        text.setAttribute('text-anchor', 'middle');
+        text.textContent = link.label;
+        svg.appendChild(text);
+      }
+    });
+  }
+
+  /** ทำให้จุดหนึ่งลากได้ ทั้งเมาส์และนิ้ว (Pointer Events รองรับทั้งคู่ในตัวเดียว) */
+  function attachNetNodeDrag_(el) {
+    let dragging = false;
+    let moved = false;
+    let startX = 0, startY = 0, origX = 0, origY = 0;
+
+    el.addEventListener('pointerdown', (e) => {
+      // ไม่เริ่มลากถ้ากดที่ลิงก์ IP (ปล่อยให้เปิดลิงก์ตามปกติ)
+      if (e.target.closest('a')) return;
+      dragging = true;
+      moved = false;
+      el.classList.add('dragging');
+      el.setPointerCapture(e.pointerId);
+      startX = e.clientX; startY = e.clientY;
+      const pos = networkNodePos_[el.dataset.assetId];
+      origX = pos.x; origY = pos.y;
+    });
+
+    el.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX, dy = e.clientY - startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+      if (!moved) return;
+      const newX = Math.max(0, origX + dx);
+      const newY = Math.max(0, origY + dy);
+      el.style.left = newX + 'px';
+      el.style.top = newY + 'px';
+      networkNodePos_[el.dataset.assetId] = { x: newX, y: newY };
+      drawNetworkLinks_();
+    });
+
+    el.addEventListener('pointerup', async (e) => {
+      if (!dragging) return;
+      dragging = false;
+      el.classList.remove('dragging');
+      if (!moved) return; // แค่แตะ/คลิกเฉยๆ ไม่ได้ลาก ไม่ต้องบันทึก
+      const pos = networkNodePos_[el.dataset.assetId];
+      try {
+        await apiPost('saveNodePosition', { assetId: el.dataset.assetId, x: Math.round(pos.x), y: Math.round(pos.y) });
+      } catch (err) {
+        showToast('บันทึกตำแหน่งไม่สำเร็จ: ' + err.message);
+      }
+    });
+  }
+
+  /** ยืนยันก่อนลบเส้นเชื่อม (กดที่เส้นบนแผนผัง) */
+  function confirmDeleteNetworkLink_(link) {
+    const fromNode = networkMapNodes.find(n => n.assetId === link.fromAssetId);
+    const toNode = networkMapNodes.find(n => n.assetId === link.toAssetId);
+    const fromName = fromNode ? fromNode.name : link.fromAssetId;
+    const toName = toNode ? toNode.name : link.toAssetId;
+
+    openModal('ลบเส้นเชื่อม', `
+      <p style="font-size:14px; line-height:1.6;">ต้องการลบเส้นเชื่อมระหว่าง<br>
+        <strong>${escapeHtml(fromName)}</strong> ↔ <strong>${escapeHtml(toName)}</strong> ใช่หรือไม่?</p>
+      <div style="display:flex; gap:10px; margin-top:16px;">
+        <button type="button" class="btn btn-secondary" id="cancelDeleteLinkBtn" style="flex:1;">ยกเลิก</button>
+        <button type="button" class="btn btn-primary" id="confirmDeleteLinkBtn" style="flex:1; background:var(--coral);">ลบเส้นเชื่อม</button>
+      </div>
+    `);
+    document.getElementById('cancelDeleteLinkBtn').addEventListener('click', closeModal);
+    document.getElementById('confirmDeleteLinkBtn').addEventListener('click', async () => {
+      try {
+        await apiPost('deleteNetworkLink', { linkId: link.linkId });
+        showToast('ลบเส้นเชื่อมเรียบร้อย');
+        closeModal();
+        await loadNetworkMap();
+      } catch (err) {
+        showToast('ลบไม่สำเร็จ: ' + err.message);
+      }
+    });
+  }
+
+  /** เปิด modal เพิ่มเส้นเชื่อมใหม่ — เลือกอุปกรณ์ต้นทาง/ปลายทางจาก dropdown */
+  function openAddNetworkLinkModal_() {
+    if (networkMapNodes.length < 2) {
+      showToast('ต้องมีอุปกรณ์เครือข่ายอย่างน้อย 2 ชิ้นก่อน ถึงจะเชื่อมต่อกันได้');
+      return;
+    }
+    const options = [...networkMapNodes]
+      .sort((a, b) => a.name.localeCompare(b.name, 'th'))
+      .map(n => `<option value="${escapeHtml(n.assetId)}">${escapeHtml(n.name)} (${escapeHtml(n.assetId)})</option>`)
+      .join('');
+
+    openModal('เชื่อมต่ออุปกรณ์', `
+      <div class="field"><label>อุปกรณ์ต้นทาง *</label>
+        <select id="netlinkFrom" required><option value="">-- เลือกอุปกรณ์ --</option>${options}</select>
+      </div>
+      <div class="field"><label>อุปกรณ์ปลายทาง *</label>
+        <select id="netlinkTo" required><option value="">-- เลือกอุปกรณ์ --</option>${options}</select>
+      </div>
+      <div class="field"><label>หมายเหตุ (เช่น หมายเลขพอร์ต/สาย)</label>
+        <input type="text" id="netlinkLabel" placeholder="เช่น Port 3, สายแลนชั้น 2"></div>
+      <button type="button" class="btn btn-primary" id="saveNetworkLinkBtn" style="width:100%;">บันทึกเส้นเชื่อม</button>
+    `);
+
+    document.getElementById('saveNetworkLinkBtn').addEventListener('click', async () => {
+      const fromAssetId = document.getElementById('netlinkFrom').value;
+      const toAssetId = document.getElementById('netlinkTo').value;
+      const label = document.getElementById('netlinkLabel').value.trim();
+      if (!fromAssetId || !toAssetId) { showToast('กรุณาเลือกอุปกรณ์ทั้ง 2 ฝั่ง'); return; }
+      if (fromAssetId === toAssetId) { showToast('เลือกอุปกรณ์ 2 ชิ้นที่ไม่ซ้ำกัน'); return; }
+      try {
+        await apiPost('saveNetworkLink', { fromAssetId, toAssetId, label });
+        showToast('เชื่อมต่ออุปกรณ์เรียบร้อย');
+        closeModal();
+        await loadNetworkMap();
+      } catch (err) {
+        showToast('บันทึกไม่สำเร็จ: ' + err.message);
+      }
+    });
+  }
+
+  document.getElementById('addNetworkLinkBtn').addEventListener('click', openAddNetworkLinkModal_);
+  document.getElementById('refreshNetworkMapBtn').addEventListener('click', async () => {
+    await loadNetworkMap();
+    showToast('รีเฟรช Network Map แล้ว');
+  });
 
   // ===================================================================
   // ส่วนที่ 12: หน้า IT — ระบบแจ้งเตือน (Polling ทุก 30 วินาที ไม่ต้อง VAPID/FCM)
