@@ -995,6 +995,10 @@
             ยังไม่มีอุปกรณ์เครือข่าย (AP / Router,Switch / NVR,CCTV) ในระบบทรัพย์สิน<br>
             เพิ่มทรัพย์สินหมวดเหล่านี้ก่อน แล้วจะมาโผล่บนแผนผังนี้ให้อัตโนมัติ
           </div>
+          <div class="empty-state" id="netmapNoLinksState" style="display:none;">
+            ยังไม่มีอุปกรณ์ไหนถูกเชื่อมต่อบนแผนผังนี้เลย (ซ่อนไว้ทั้งหมดเพื่อให้จัดวางง่ายขึ้น)<br>
+            กด "เชื่อมต่ออุปกรณ์" ด้านบน เลือกอุปกรณ์ 2 ชิ้นแล้วบันทึก อุปกรณ์คู่นั้นจะโผล่ขึ้นมาให้ลากจัดตำแหน่งได้ทันที
+          </div>
         </div>
 
       </div>
@@ -3073,16 +3077,32 @@
   function renderNetworkMap() {
     const canvas = document.getElementById('netmapCanvas');
     const emptyState = document.getElementById('netmapEmptyState');
+    const noLinksState = document.getElementById('netmapNoLinksState');
     // ล้างจุดเดิมทิ้ง (เก็บ svg ไว้ วาดใหม่แยกใน drawNetworkLinks) ก่อนสร้างใหม่
     canvas.querySelectorAll('.netnode').forEach(el => el.remove());
 
-    emptyState.style.display = networkMapNodes.length ? 'none' : 'block';
-    document.getElementById('netmapScroll').style.display = networkMapNodes.length ? 'block' : 'none';
-    if (!networkMapNodes.length) return;
+    const hasAnyDevices = networkMapNodes.length > 0;
+
+    // แสดงเฉพาะอุปกรณ์ที่ "มีเส้นเชื่อมอยู่แล้ว" (โผล่ในฝั่ง From หรือ To ของ
+    // networkMapLinks อย่างน้อย 1 เส้น) — อุปกรณ์ที่ยังไม่เคยเชื่อมกับใครเลยจะถูก
+    // ซ่อนไว้ก่อน ไม่เกะกะพื้นที่จัดวาง จนกว่าผู้ใช้จะกด "เชื่อมต่ออุปกรณ์" แล้ว
+    // เลือกมันเข้าไปในเส้นเชื่อมสักเส้นหนึ่ง มันถึงจะโผล่ขึ้นมาบนแผนผังให้ลากจัดวางได้
+    const linkedAssetIds_ = new Set();
+    networkMapLinks.forEach(l => {
+      linkedAssetIds_.add(String(l.fromAssetId));
+      linkedAssetIds_.add(String(l.toAssetId));
+    });
+    const visibleNodes = networkMapNodes.filter(n => linkedAssetIds_.has(String(n.assetId)));
+
+    emptyState.style.display = hasAnyDevices ? 'none' : 'block';
+    noLinksState.style.display = (hasAnyDevices && !visibleNodes.length) ? 'block' : 'none';
+    document.getElementById('netmapScroll').style.display = visibleNodes.length ? 'block' : 'none';
+    if (!visibleNodes.length) return;
 
     // ขนาดพื้นที่วาดจริง (พิกัดจริง ยังไม่คูณซูม) ต้องกว้าง/สูงพอให้ครอบคลุมจุดที่อยู่ไกลสุด
+    // คำนวณจากอุปกรณ์ที่ "แสดงอยู่" เท่านั้น อุปกรณ์ที่ซ่อนไว้ไม่ต้องเผื่อพื้นที่ให้
     let maxX = 700, maxY = 480;
-    networkMapNodes.forEach(n => {
+    visibleNodes.forEach(n => {
       const p = networkNodePos_[n.assetId];
       maxX = Math.max(maxX, p.x + 200);
       maxY = Math.max(maxY, p.y + 140);
@@ -3093,7 +3113,7 @@
     document.getElementById('netmapSvg').setAttribute('width', maxX);
     document.getElementById('netmapSvg').setAttribute('height', maxY);
 
-    networkMapNodes.forEach(n => {
+    visibleNodes.forEach(n => {
       const meta = NETWORK_CATEGORY_META_[n.category] || { icon: '🔌', color: 'var(--muted)' };
       const pos = networkNodePos_[n.assetId];
       const dotColor = n.status === 'ใช้งานได้' ? 'var(--seagrass)'
