@@ -1225,6 +1225,11 @@
   // openAssetFormModal) แทนการ hardcode รายชื่อไว้ในโค้ด — พอมีหมวดหมู่ใหม่
   // เพิ่มเข้ามาจากปุ่ม "+" ในฟอร์ม จะ refresh ตัวแปรนี้ให้ใหม่ทันที
   let assetCategoriesCache = [];
+  // หมวดหมู่ที่ต้องเก็บสเปคเครือข่าย (IP/MAC) แทนสเปคคอมพิวเตอร์ทั่วไป (Device
+  // Name/CPU/RAM/ฯลฯ) ใช้ทั้งในฟอร์มเพิ่ม/แก้ไขทรัพย์สิน (openAssetFormModal)
+  // และหน้ารายละเอียดทรัพย์สิน (openAssetDetailModal) นิยามไว้ที่เดียวตรงนี้
+  // กันกรณีแก้ที่หนึ่งแล้วลืมแก้อีกที่ทำให้ IP ไม่โชว์ตรงกัน
+  const ASSET_NETWORK_SPEC_CATEGORIES = ['NVR,CCTV', 'Router,Swicth', 'AP'];
   let currentCaseFilter = 'all';
   let allCasesCache = [];
   let currentCasePage = 1;
@@ -2193,8 +2198,9 @@
     const categories = (assetCategoriesCache || []).map(c => c.category);
     // หมวดหมู่ที่ต้องโชว์ช่องสเปคเครื่อง (Device Name/IP/CPU/RAM/DDR/HDD-SSD/Windows)
     const categoriesWithSpecs = ['PC', 'Notebook'];
-    // หมวดหมู่กล้อง/เครือข่ายที่ต้องโชว์ช่อง IP/MAC แทน
-    const categoriesWithNetworkSpecs = ['NVR,CCTV'];
+    // หมวดหมู่กล้อง/เครือข่ายที่ต้องโชว์ช่อง IP/MAC แทน (PC/Notebook, NVR-CCTV,
+    // Router/Switch, AP)
+    const categoriesWithNetworkSpecs = ASSET_NETWORK_SPEC_CATEGORIES;
     const statuses = ['สำรอง', 'ใช้งานได้', 'ซ่อมบำรุง', 'ชำรุด', 'จำหน่ายแล้ว'];
 
     openModal(isEdit ? 'แก้ไขทรัพย์สิน ' + asset.Asset_ID : 'เพิ่มทรัพย์สินใหม่', `
@@ -2280,8 +2286,8 @@
 
     // ทำไมต้องมี: ช่องสเปคเครื่อง (Device Name/IP/CPU/RAM/DDR/HDD-SSD/Windows)
     // มีความหมายเฉพาะกับเครื่อง PC/Notebook เท่านั้น ส่วน IP/MAC มีความหมาย
-    // เฉพาะกับกล้อง/เครือข่าย (NVR,CCTV) หมวดอื่นไม่เกี่ยวข้องเลย จึงซ่อนไว้ก่อน
-    // แล้วโชว์เฉพาะกลุ่มที่ตรงกับหมวดหมู่ที่เลือก
+    // เฉพาะกับอุปกรณ์เครือข่าย (NVR,CCTV / Router,Swicth / AP) หมวดอื่นไม่
+    // เกี่ยวข้องเลย จึงซ่อนไว้ก่อน แล้วโชว์เฉพาะกลุ่มที่ตรงกับหมวดหมู่ที่เลือก
     function toggleSpecFields() {
       const cat = document.getElementById('assetCategory').value;
       document.getElementById('specWrapPC').style.display = categoriesWithSpecs.includes(cat) ? 'block' : 'none';
@@ -2536,7 +2542,7 @@
       if (asset.RAM) specLines += `<div class="meta">💾 RAM: ${escapeHtml(asset.RAM)}${asset.RAM_DDR ? ' (' + escapeHtml(asset.RAM_DDR) + ')' : ''}</div>`;
       if (asset.Storage) specLines += `<div class="meta">💽 HDD/SSD: ${escapeHtml(asset.Storage)}</div>`;
       if (asset.Windows_License) specLines += `<div class="meta">🪟 Windows: ${escapeHtml(asset.Windows_License)}</div>`;
-    } else if (asset.Category === 'NVR,CCTV') {
+    } else if (ASSET_NETWORK_SPEC_CATEGORIES.includes(asset.Category)) {
       if (asset.IP_Address) specLines += `<div class="meta">🌐 IP: ${escapeHtml(asset.IP_Address)}</div>`;
       if (asset.MAC_Address) specLines += `<div class="meta">🔗 MAC: ${escapeHtml(asset.MAC_Address)}</div>`;
     }
