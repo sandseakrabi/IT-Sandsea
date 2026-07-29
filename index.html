@@ -903,6 +903,7 @@
           <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
             <input type="text" id="assetSearchInput" placeholder="ค้นหาชื่อ / Serial / ผู้ถือครอง"
               style="flex:1; min-width:180px; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px;">
+            <button type="button" class="btn btn-secondary" id="exportAssetsBtn">📊 Export Excel</button>
             <button type="button" class="btn btn-primary" id="addAssetBtn">+ เพิ่มทรัพย์สิน</button>
           </div>
           <!-- แถวที่ 1: กรองตามหมวดหมู่ สร้างแบบไดนามิกจาก assetCategoriesCache
@@ -2305,6 +2306,72 @@
   }
 
   document.getElementById('addAssetBtn').addEventListener('click', () => openAssetFormModal(null));
+
+  /**
+   * เปิดฟอร์มเลือกเงื่อนไข Export ทรัพย์สินเป็น Excel — ทุกช่องเป็น optional
+   * เลือกกี่อันพร้อมกันก็ได้ (เช่น กรองเฉพาะแผนก, เฉพาะคนถือครอง, หรือทั้งคู่)
+   * ไม่เลือกอะไรเลยแปลว่า export ทรัพย์สินทั้งหมด
+   */
+  function openExportAssetsModal() {
+    const categories = (assetCategoriesCache || []).map(c => c.category);
+    const statuses = ['สำรอง', 'ใช้งานได้', 'ซ่อมบำรุง', 'ชำรุด', 'จำหน่ายแล้ว'];
+
+    openModal('Export ทรัพย์สินเป็น Excel', `
+      <form id="exportAssetsForm">
+        <p style="font-size:13px; color:var(--muted); margin:-4px 0 14px;">
+          เลือกเงื่อนไขที่ต้องการ (เว้นว่างช่องไหนคือไม่กรองตามช่องนั้น) ไฟล์ที่ได้
+          จะมีรหัส/ชื่อ/สถานที่/สถานะ/ผู้ถือครอง และประวัติของทรัพย์สินที่ตรงเงื่อนไขทั้งหมด
+        </p>
+        <div class="row2">
+          <div class="field"><label>หมวดหมู่</label>
+            <select id="exportAssetCategory">
+              <option value="all">ทั้งหมด</option>
+              ${categories.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>สถานะ</label>
+            <select id="exportAssetStatus">
+              <option value="all">ทั้งหมด</option>
+              ${statuses.map(s => `<option value="${s}">${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="field"><label>สถานที่/แผนก</label>
+          <input type="text" id="exportAssetLocation" placeholder="เช่น ครัว, บัญชี, ต้อนรับ (เว้นว่าง = ทุกแผนก)"></div>
+        <div class="field"><label>ผู้ถือครอง</label>
+          <input type="text" id="exportAssetAssignedTo" placeholder="ชื่อพนักงาน (เว้นว่าง = ทุกคน)"></div>
+        <div class="field"><label>คำค้นหาเพิ่มเติม</label>
+          <input type="text" id="exportAssetKeyword" placeholder="ค้นจากชื่อ/Serial/หมายเหตุ (ถ้าต้องการ)"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="exportAssetsSubmitBtn">📊 Export Excel</button>
+      </form>
+    `);
+
+    document.getElementById('exportAssetsForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('exportAssetsSubmitBtn');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'กำลังสร้างไฟล์...';
+      try {
+        const result = await apiGet('exportAssets', {
+          category: document.getElementById('exportAssetCategory').value,
+          status: document.getElementById('exportAssetStatus').value,
+          location: document.getElementById('exportAssetLocation').value.trim(),
+          assignedTo: document.getElementById('exportAssetAssignedTo').value.trim(),
+          keyword: document.getElementById('exportAssetKeyword').value.trim()
+        });
+        showToast(result.message);
+        window.open(result.downloadUrl, '_blank');
+        closeModal();
+      } catch (err) {
+        showToast('Export ไม่สำเร็จ: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    });
+  }
+  document.getElementById('exportAssetsBtn').addEventListener('click', openExportAssetsModal);
 
   /**
    * เปิดฟอร์มเพิ่ม/แก้ไขทรัพย์สิน asset=null คือโหมด "เพิ่มใหม่" ถ้าส่ง object
