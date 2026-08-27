@@ -521,6 +521,30 @@
      ของแต่ละ .netnode ทุกครั้งที่ตำแหน่งเปลี่ยน (ดู drawNetworkLinks() ใน JS)
      =================================================================== */
   .netmap-toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  /* ช่องค้นหาบนแผนผัง — ค้นจากชื่อ/IP/รหัสทรัพย์สิน/สถานที่/รุ่นของทุกจุดพร้อมกัน
+     ไม่ได้ "กรอง" จุดออกจากแผนผัง (เพราะยังต้องเห็นเส้นเชื่อมทั้งภาพ) แต่หรี่จุดที่
+     ไม่ตรงกับคำค้นหาลง (.netnode-dim) แล้วไฮไลต์กรอบจุดที่ตรง (.netnode-match) แทน */
+  .netmap-search { position: relative; margin-bottom: 8px; }
+  .netmap-search-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    font-size: 13px; opacity: 0.55; pointer-events: none;
+  }
+  .netmap-search input {
+    width: 100%; box-sizing: border-box; padding: 10px 36px 10px 34px;
+    border: 1px solid var(--border); border-radius: 9px; font-size: 14px;
+    background: var(--white); color: var(--ink);
+  }
+  .netmap-search input:focus { outline: none; border-color: var(--ocean); }
+  .netmap-search-clear {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 28px; height: 28px; min-height: 0; padding: 0; border: none; background: none;
+    color: var(--muted); font-size: 15px; cursor: pointer; border-radius: 50%;
+  }
+  .netmap-search-clear:active { background: var(--foam); }
+  .netmap-search-status { font-size: 12px; margin: -2px 0 10px; }
+  .netnode.netnode-dim { opacity: 0.25; filter: grayscale(65%); }
+  .netnode.netnode-match { box-shadow: 0 0 0 3px var(--deep-sea), 0 4px 14px rgba(15,59,87,0.22); z-index: 3; }
+  .netmap-canvas svg line.netlink.netlink-dim { opacity: 0.12; }
   .netmap-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
   .netmap-legend span { display: inline-flex; align-items: center; gap: 5px; }
   .netmap-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
@@ -981,6 +1005,14 @@
               <button type="button" id="netmapZoomResetBtn" title="รีเซ็ตเป็น 100%">⟳</button>
             </div>
           </div>
+          <div class="netmap-search">
+            <span class="netmap-search-icon">🔍</span>
+            <input type="text" id="netmapSearchInput" autocomplete="off"
+              placeholder="ค้นหา: ชื่อ, IP, รหัสทรัพย์สิน, สถานที่, รุ่น...">
+            <button type="button" class="netmap-search-clear" id="netmapSearchClearBtn"
+              title="ล้างการค้นหา" style="display:none;">✕</button>
+          </div>
+          <div class="netmap-search-status" id="netmapSearchStatus" style="display:none;"></div>
           <div class="netmap-legend">
             <span><i style="background:var(--ocean);"></i>AP</span>
             <span><i style="background:var(--amber);"></i>Router,Switch</span>
@@ -3112,6 +3144,7 @@
   let networkMapNodes = [];   // ข้อมูลดิบจาก server (ชื่อ/IP/สถานะ/ฯลฯ)
   let networkMapLinks = [];   // ข้อมูลดิบจาก server (เส้นเชื่อม)
   let networkNodePos_ = {};   // assetId -> {x, y} ตำแหน่งปัจจุบันบนแผนผัง (in-memory)
+  let netmapSearchQuery_ = ''; // คำค้นหาปัจจุบัน (lowercase, trim แล้ว) — '' แปลว่าไม่ได้ค้นหาอยู่
   let netmapZoom = 1;         // ระดับซูมปัจจุบัน (1 = 100%) ปรับด้วยปุ่ม +/− หรือ Ctrl+scroll
   let netmapCanvasSize_ = { w: 700, h: 480 }; // ขนาดผืนผ้าใบ "จริง" (ไม่คูณซูม) อัปเดตทุกครั้งที่ render
   const NETMAP_ZOOM_MIN_ = 0.3, NETMAP_ZOOM_MAX_ = 2.5, NETMAP_ZOOM_STEP_ = 0.1;
@@ -3265,6 +3298,12 @@
       line.setAttribute('x1', x1); line.setAttribute('y1', y1);
       line.setAttribute('x2', x2); line.setAttribute('y2', y2);
       line.setAttribute('class', 'netlink');
+      // เก็บ assetId ปลายสายทั้ง 2 ฝั่งไว้ที่ dataset — ใช้ตอนค้นหา (ดู
+      // applyNetmapSearchFilter_) เพื่อรู้ว่าเส้นนี้ควรหรี่ลงหรือไม่ โดยไม่ต้อง
+      // ไปไล่จับคู่กับ networkMapLinks ด้วยลำดับ index (ซึ่งอาจเพี้ยนได้ถ้ามีเส้น
+      // ที่ปลายทางหาตำแหน่งไม่เจอแล้วถูกข้ามไปตอน forEach ด้านบน)
+      line.dataset.from = String(link.fromAssetId);
+      line.dataset.to = String(link.toAssetId);
       line.addEventListener('click', () => confirmDeleteNetworkLink_(link));
       svg.appendChild(line);
 
@@ -3278,6 +3317,82 @@
         svg.appendChild(text);
       }
     });
+    // เส้นเพิ่งถูกวาดใหม่ทั้งหมด (ทุกครั้งที่ลากจุดก็เรียกฟังก์ชันนี้ซ้ำ) — ต้องทา
+    // สถานะหรี่/ไฮไลต์ของการค้นหาซ้ำด้วย ไม่งั้นพอลากจุดแล้วเส้นจะโดนล้างกลับปกติหมด
+    applyNetmapSearchFilter_(false);
+  }
+
+  /** ค้นหาอุปกรณ์บนแผนผังจาก netmapSearchQuery_ (ชื่อ/รหัสทรัพย์สิน/IP/สถานที่/รุ่น)
+   *  ไม่ซ่อนจุดที่ไม่ตรง (ยังต้องเห็นภาพรวมทั้งแผนผังเพื่อดูเส้นเชื่อม) แต่หรี่ + ทำ
+   *  เส้นที่ไม่เกี่ยวข้องให้จางลงแทน แล้วไฮไลต์กรอบ + เลื่อนจอไปหาจุดที่ตรงจุดแรก
+   *  scrollToFirst: true เฉพาะตอนผู้ใช้พิมพ์ค้นหาเอง (ไม่ใช่ทุกครั้งที่ลากจุด/รีเฟรช) */
+  function applyNetmapSearchFilter_(scrollToFirst) {
+    const canvas = document.getElementById('netmapCanvas');
+    const svg = document.getElementById('netmapSvg');
+    const statusEl = document.getElementById('netmapSearchStatus');
+    const clearBtn = document.getElementById('netmapSearchClearBtn');
+    if (!canvas || !svg || !statusEl || !clearBtn) return;
+
+    const query = netmapSearchQuery_;
+    clearBtn.style.display = query ? 'inline-flex' : 'none';
+
+    const nodeEls = canvas.querySelectorAll('.netnode');
+    const lineEls = svg.querySelectorAll('line.netlink');
+
+    if (!query) {
+      nodeEls.forEach(el => el.classList.remove('netnode-dim', 'netnode-match'));
+      lineEls.forEach(l => l.classList.remove('netlink-dim'));
+      statusEl.style.display = 'none';
+      return;
+    }
+
+    // รวมทุกฟิลด์ที่ผู้ใช้อยากค้นได้ (ชื่อ, รหัสทรัพย์สิน, IP, สถานที่, รุ่น) เป็น
+    // ข้อความเดียวต่อจุด แล้วเทียบแบบ "มีคำนี้อยู่บ้างส่วนใดก็ได้" (ไม่สนตัวพิมพ์เล็ก/ใหญ่)
+    const matchesQuery_ = (n) => {
+      if (!n) return false;
+      const haystack = [n.name, n.assetId, n.ip, n.location, n.brandModel, n.mac]
+        .filter(Boolean).join(' ').toLowerCase();
+      return haystack.indexOf(query) !== -1;
+    };
+    const nodeById_ = {};
+    networkMapNodes.forEach(n => { nodeById_[String(n.assetId)] = n; });
+
+    const matchedIds_ = new Set();
+    let firstMatchEl = null;
+    nodeEls.forEach(el => {
+      const match = matchesQuery_(nodeById_[el.dataset.assetId]);
+      el.classList.toggle('netnode-match', match);
+      el.classList.toggle('netnode-dim', !match);
+      if (match) {
+        matchedIds_.add(el.dataset.assetId);
+        if (!firstMatchEl) firstMatchEl = el;
+      }
+    });
+
+    // เส้นเชื่อมหรี่ลงเฉพาะเมื่อ "ปลายทั้ง 2 ฝั่ง" ไม่ตรงกับคำค้นหาเลย — ถ้าปลาย
+    // ฝั่งใดฝั่งหนึ่งตรง ยังโชว์เส้นปกติไว้ ช่วยดูว่าจุดที่ค้นเจอต่อไปหาใคร
+    lineEls.forEach(line => {
+      const dim = !(matchedIds_.has(line.dataset.from) || matchedIds_.has(line.dataset.to));
+      line.classList.toggle('netlink-dim', dim);
+    });
+
+    if (scrollToFirst && firstMatchEl) {
+      firstMatchEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    }
+
+    statusEl.style.display = 'block';
+    if (matchedIds_.size > 0) {
+      statusEl.style.color = 'var(--muted)';
+      statusEl.textContent = `พบ ${matchedIds_.size} อุปกรณ์บนแผนผัง`;
+    } else {
+      // ไม่เจอบนแผนผัง เช็คต่อว่ามีอุปกรณ์นี้ในระบบทรัพย์สินไหม (แค่ยังไม่ถูกเชื่อม
+      // ต่อเลยไม่ถูกแสดง — ดู visibleNodes ใน renderNetworkMap) จะได้บอกผู้ใช้ถูกจุด
+      const existsButHidden = networkMapNodes.some(n => matchesQuery_(n));
+      statusEl.style.color = 'var(--coral)';
+      statusEl.textContent = existsButHidden
+        ? 'มีอุปกรณ์นี้ในระบบทรัพย์สิน แต่ยังไม่ถูกเชื่อมต่อบนแผนผัง — กด "เชื่อมต่ออุปกรณ์" ด้านบนเพื่อเพิ่มเข้ามา'
+        : 'ไม่พบอุปกรณ์ที่ตรงกับคำค้นหานี้';
+    }
   }
 
   /** ทำให้จุดหนึ่งลากได้ ทั้งเมาส์และนิ้ว (Pointer Events รองรับทั้งคู่ในตัวเดียว) */
@@ -3456,6 +3571,19 @@
   document.getElementById('refreshNetworkMapBtn').addEventListener('click', async () => {
     await loadNetworkMap();
     showToast('รีเฟรช Network Map แล้ว');
+  });
+
+  // ---- ช่องค้นหาบนแผนผัง (ชื่อ/IP/รหัสทรัพย์สิน/สถานที่/รุ่น) ----
+  const netmapSearchInput_ = document.getElementById('netmapSearchInput');
+  netmapSearchInput_.addEventListener('input', () => {
+    netmapSearchQuery_ = netmapSearchInput_.value.trim().toLowerCase();
+    applyNetmapSearchFilter_(true);
+  });
+  document.getElementById('netmapSearchClearBtn').addEventListener('click', () => {
+    netmapSearchInput_.value = '';
+    netmapSearchQuery_ = '';
+    applyNetmapSearchFilter_(false);
+    netmapSearchInput_.focus();
   });
 
   // ---- ปุ่มซูมเข้า/ออก/รีเซ็ต ----
