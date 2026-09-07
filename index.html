@@ -3388,6 +3388,9 @@
         table.items th, table.items td { border:1px solid #cdd9de; padding:6px 8px; text-align:left; }
         table.items th { background:#eef4f6; }
         .item-extra { color:#5b7684; font-size:12px; }
+        .notes-section { margin-bottom:24px; padding:10px 12px; background:#f7fafb; border:1px solid #e0e9ec; border-radius:6px; }
+        .notes-title { font-weight:700; font-size:13px; margin-bottom:4px; }
+        .notes-body { font-size:13px; white-space:pre-wrap; line-height:1.6; }
         .sign-box { text-align:left; margin-top:auto; align-self:flex-start; padding-top:12px; }
         .sign-box img { max-width:140px; max-height:60px; display:block; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
         .sign-placeholder { height:60px; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
@@ -3409,13 +3412,17 @@
             <tr><td class="label">ผู้รับ</td><td>${escapeHtml(opts.receiverName || '')}${opts.position ? ' (' + escapeHtml(opts.position) + ')' : ''}</td></tr>
             ${opts.department ? `<tr><td class="label">แผนก</td><td>${escapeHtml(opts.department)}</td></tr>` : ''}
             <tr><td class="label">วันที่รับ</td><td>${escapeHtml(opts.dateHandover || '')}</td></tr>
-            ${opts.notes ? `<tr><td class="label">หมายเหตุ</td><td>${escapeHtml(opts.notes)}</td></tr>` : ''}
             <tr><td class="label">ผู้ออกเอกสาร</td><td>${escapeHtml(opts.issuedBy || '-')}</td></tr>
           </table>
           <table class="items">
             <thead><tr><th style="width:32px;">#</th><th style="width:140px;">รหัสทรัพย์สิน</th><th>รายการ</th></tr></thead>
             <tbody>${itemRows}</tbody>
           </table>
+          ${opts.notes ? `
+          <div class="notes-section">
+            <div class="notes-title">หมายเหตุ</div>
+            <div class="notes-body">${escapeHtml(opts.notes)}</div>
+          </div>` : ''}
           <div class="sign-box">
             ${opts.signatureSrc ? `<img src="${opts.signatureSrc}" alt="ลายเซ็น">` : `<div class="sign-placeholder"></div>`}
             <div class="sign-name">ลายเซ็นผู้รับ: ${escapeHtml(opts.receiverName || '')}</div>
