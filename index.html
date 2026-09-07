@@ -776,6 +776,7 @@
           </div>
           <div class="tab" data-panel="assets"><span class="tab-icon">🖥️</span>ทรัพย์สิน</div>
           <div class="tab" data-panel="handover"><span class="tab-icon">✍️</span>ฟอร์มรับทรัพย์สิน</div>
+          <div class="tab" data-panel="return"><span class="tab-icon">↩️</span>ฟอร์มส่งคืนทรัพย์สิน</div>
           <div class="tab" data-panel="stockit">
             <span class="tab-icon">🗃️</span>Stock IT
             <span class="badge" id="stockBadge">0</span>
@@ -1026,6 +1027,85 @@
           <div class="card">
             <h3>ประวัติใบเซ็นรับล่าสุด</h3>
             <div id="hoHistoryList"></div>
+          </div>
+        </div>
+
+        <!-- ===================================================================
+             แท็บ "ฟอร์มส่งคืนทรัพย์สิน" — ใบรับคืนตอนพนักงานส่งของกลับ คู่กับ
+             แท็บ "ฟอร์มรับทรัพย์สิน" ด้านบน โครง 3 ขั้นตอนเดียวกันทุกประการ
+             (ข้อมูลผู้คืน -> เลือกทรัพย์สิน -> เซ็นชื่อยืนยัน) ต่างกันตรงขั้นตอน
+             ที่ 2: ต้องเลือก "สถานะการคืน" แยกเป็นรายชิ้นด้วย (ครบ/ไม่ครบ/เสียหาย)
+             เพราะใบเดียวอาจมีของหลายชิ้นสภาพไม่เหมือนกัน เช่น Notebook คืนมา
+             สภาพดี แต่ Monitor จอแตก เลือกแยกกันได้ต่อรหัสทรัพย์สิน แล้วบันทึก
+             ผลลงประวัติของทรัพย์สินชิ้นนั้นๆ (ดู saveAssetReturn() ใน Assets.gs)
+             =================================================================== -->
+        <div class="panel" id="panel-return">
+
+          <!-- ขั้นตอน 1: ข้อมูลผู้คืน -->
+          <div class="card" id="rtStep1">
+            <h3>ขั้นตอน 1 จาก 3 — ข้อมูลผู้คืน</h3>
+            <div class="field"><label>ชื่อ-สกุลผู้คืน *</label><input type="text" id="rtReturnerName" placeholder="ชื่อพนักงานผู้คืนของ"></div>
+            <div class="field"><label>ตำแหน่ง</label><input type="text" id="rtPosition" placeholder="เช่น พนักงานต้อนรับ, บัญชี"></div>
+            <div class="field"><label>แผนก</label><input type="text" id="rtDepartment" placeholder="เช่น ต้อนรับ, แม่บ้าน, ครัว, บัญชี"></div>
+            <div class="field"><label>วันที่คืน</label><input type="date" id="rtDate"></div>
+            <div class="field"><label>หมายเหตุ (ทั้งใบ)</label><textarea id="rtNotes" placeholder="ถ้ามี (ไม่บังคับ)"></textarea></div>
+            <button type="button" class="btn btn-primary" style="width:100%;" id="rtStep1NextBtn">ถัดไป: เลือกทรัพย์สิน →</button>
+          </div>
+
+          <!-- ขั้นตอน 2: เลือกทรัพย์สินที่จะคืน + เลือกสถานะแต่ละชิ้นทันที -->
+          <div class="card" id="rtStep2" style="display:none;">
+            <h3>ขั้นตอน 2 จาก 3 — เลือกทรัพย์สินที่จะคืน</h3>
+            <div style="background:#E3F0F7; color:#0F3B57; border:1px solid #bcdcff; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.6;">
+              เพิ่มทรัพย์สินแล้วเลือก "สถานะการคืน" ของ<strong>แต่ละชิ้น</strong>ด้านล่าง — ถ้าของหลายชิ้นในใบเดียวสภาพไม่เหมือนกัน เลือกแยกต่อชิ้นได้เลย
+            </div>
+
+            <!-- แสดงรายการที่ผู้คืนถือครองอยู่ตอนนี้ (กรองจาก allAssetsCache ด้วย
+                 Assigned_To) ให้กด "+ เพิ่ม" ได้เลยโดยไม่ต้องพิมพ์ค้นหา เร็วกว่า
+                 เวลาคืนของหลายชิ้นพร้อมกัน -->
+            <div id="rtHeldByBox" style="margin-bottom:12px;"></div>
+
+            <input type="text" id="rtAssetSearchInput" placeholder="ค้นหารหัส / ชื่อ / Serial" autocomplete="off"
+              style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px; margin-bottom:8px;">
+            <div id="rtAssetSearchResults" style="max-height:220px; overflow-y:auto; margin-bottom:16px;"></div>
+
+            <h4 style="margin:0 0 8px;">รายการที่จะคืน (<span id="rtSelectedCount">0</span> ชิ้น)</h4>
+            <div id="rtSelectedList" style="margin-bottom:16px;"></div>
+
+            <div style="display:flex; gap:8px;">
+              <button type="button" class="btn btn-secondary" id="rtStep2BackBtn" style="flex:1;">← ย้อนกลับ</button>
+              <button type="button" class="btn btn-primary" id="rtStep2NextBtn" style="flex:1;">ถัดไป: เซ็นชื่อ →</button>
+            </div>
+          </div>
+
+          <!-- ขั้นตอน 3: สรุป + เซ็นชื่อยืนยัน -->
+          <div class="card" id="rtStep3" style="display:none;">
+            <h3>ขั้นตอน 3 จาก 3 — เซ็นชื่อยืนยันส่งคืน</h3>
+
+            <div id="rtStep3FormArea">
+              <div id="rtSummaryBox" style="background:var(--foam); border-radius:10px; padding:12px 14px; margin-bottom:14px; font-size:13.5px; line-height:1.7;"></div>
+              <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">ลงลายเซ็นด้านล่างด้วยนิ้ว/ปากกา</label>
+              <canvas id="rtSignatureCanvas" width="600" height="220"
+                style="border:1px solid var(--border); border-radius:10px; touch-action:none; width:100%; height:220px; background:#fff; display:block;"></canvas>
+              <button type="button" class="btn btn-secondary" id="rtClearSignBtn" style="width:100%; margin-top:8px;">🧹 ล้าง/เซ็นใหม่</button>
+              <div style="display:flex; gap:8px; margin-top:16px;">
+                <button type="button" class="btn btn-secondary" id="rtStep3BackBtn" style="flex:1;">← ย้อนกลับ</button>
+                <button type="button" class="btn btn-primary" id="rtSubmitBtn" style="flex:2;">✅ ยืนยันส่งคืนทรัพย์สิน</button>
+              </div>
+            </div>
+
+            <div id="rtSuccessBox" style="display:none; text-align:center; background:var(--foam); border-radius:10px; padding:20px 16px;">
+              <div style="font-size:28px; margin-bottom:6px;">✅</div>
+              <div style="font-weight:700; font-size:15px; margin-bottom:4px;">บันทึกใบส่งคืนเรียบร้อย</div>
+              <div style="color:var(--muted); font-size:13px; margin-bottom:16px;">เลขที่ใบ <strong id="rtSuccessReturnId"></strong></div>
+              <button type="button" class="btn btn-primary" id="rtPrintReceiptBtn" style="width:100%; margin-bottom:8px;">🖨️ พิมพ์ / ดูใบส่งคืน (A4)</button>
+              <button type="button" class="btn btn-secondary" id="rtNewFormBtn" style="width:100%;">➕ เริ่มใบใหม่</button>
+            </div>
+          </div>
+
+          <!-- ประวัติใบส่งคืนล่าสุด -->
+          <div class="card">
+            <h3>ประวัติใบส่งคืนล่าสุด</h3>
+            <div id="rtHistoryList"></div>
           </div>
         </div>
 
@@ -1548,6 +1628,7 @@
     document.getElementById('cctvDate').value = today;
     document.getElementById('backupDate').value = today;
     document.getElementById('hoDate').value = today;
+    document.getElementById('rtDate').value = today;
 
     try {
       appConfig = await apiGet('getConfig');
@@ -1591,6 +1672,7 @@
       loadCases(),
       loadAssets(),
       loadAssetHandovers(),
+      loadAssetReturns(),
       loadSupplies(),
       loadNetworkMap()
     ]);
@@ -3243,7 +3325,8 @@
           <div style="color:var(--muted); margin:2px 0;">${escapeHtml(r.Department || '-')} · ${r.Item_Count} ชิ้น · เลขที่ใบ ${escapeHtml(r.Receipt_ID)}</div>
           <div style="font-size:12.5px; color:var(--muted); margin-bottom:6px;">${escapeHtml(r.Asset_IDs)}</div>
           <div style="display:flex; gap:14px; align-items:center;">
-            ${r.Signature_URL ? `<a href="${r.Signature_URL}" target="_blank" rel="noopener" style="font-size:12.5px;">🖊️ ดูลายเซ็น</a>` : ''}
+            <!-- ตัดลิงก์ "ดูลายเซ็น" ออก: ปุ่ม "ดู/พิมพ์ใบเซ็นรับ" ด้านล่างเปิด
+                 เอกสาร A4 ที่มีลายเซ็นแสดงอยู่แล้วในตัว ไม่จำเป็นต้องมี 2 ทาง -->
             <button type="button" class="view-ho-receipt-btn" data-receipt-id="${escapeHtml(r.Receipt_ID)}"
               style="font-size:12.5px; background:none; border:none; color:var(--accent, #0F3B57); text-decoration:underline; padding:0; cursor:pointer;">🖨️ ดู/พิมพ์ใบเซ็นรับ (A4)</button>
           </div>
@@ -3440,6 +3523,524 @@
   function formatDateTimeForDisplay_(d) {
     return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) +
       ' ' + d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // ===================================================================
+  // ส่วนที่ 12.8: หน้า IT — ฟอร์มส่งคืนทรัพย์สิน (ใบส่งคืน)
+  // -------------------------------------------------------------------
+  // โครงเดียวกับ "ฟอร์มรับทรัพย์สิน" (ส่วนที่ 12.7) ทุกประการ 3 ขั้นตอนในหน้า
+  // เดียว ต่างกันตรงขั้นตอนที่ 2 ต้องเลือก "สถานะการคืน" ต่อรายชิ้นด้วย (ครบ/
+  // ไม่ครบ/เสียหาย) — กดยืนยันแล้วเรียก saveAssetReturn() ฝั่ง server ซึ่งจะไป
+  // อัพเดทสถานะทรัพย์สินแต่ละชิ้นตามที่เลือกไว้ให้อัตโนมัติ (ดู Assets.gs)
+  // ===================================================================
+  const RT_STATUS_OPTIONS = ['ครบ', 'ไม่ครบ', 'เสียหาย'];
+  let rtSelectedAssets = [];   // { Asset_ID, Name, Brand_Model, Serial_Number, status, note }
+  let rtReturnsCache = [];     // ประวัติใบส่งคืน (โหลดจาก getAssetReturns)
+  let rtSigCtx = null;
+  let rtSigDrawing = false;
+  let rtSigHasStroke = false;
+  let rtLastSavedReturn = null; // เก็บข้อมูลใบล่าสุดที่เพิ่งบันทึกสำเร็จ ไว้ให้ปุ่ม "พิมพ์/ดูใบส่งคืน" ใช้ทันที
+
+  function rtStatusPillClass_(status) {
+    if (status === 'ครบ') return 'pill-done';
+    if (status === 'ไม่ครบ') return 'pill-progress';
+    return 'pill-new'; // เสียหาย
+  }
+
+  function showRtStep(step) {
+    [1, 2, 3].forEach(n => {
+      document.getElementById('rtStep' + n).style.display = (n === step) ? '' : 'none';
+    });
+    if (step === 3) buildRtSummary();
+  }
+
+  document.getElementById('rtStep1NextBtn').addEventListener('click', () => {
+    const name = document.getElementById('rtReturnerName').value.trim();
+    if (!name) { showToast('กรุณากรอกชื่อผู้คืนก่อน'); return; }
+    renderRtHeldByBox();
+    renderRtSelectedList();
+    showRtStep(2);
+  });
+  document.getElementById('rtStep2BackBtn').addEventListener('click', () => showRtStep(1));
+  document.getElementById('rtStep2NextBtn').addEventListener('click', () => {
+    if (!rtSelectedAssets.length) { showToast('กรุณาเลือกทรัพย์สินอย่างน้อย 1 ชิ้น'); return; }
+    const missingStatus = rtSelectedAssets.filter(a => !a.status);
+    if (missingStatus.length) {
+      showToast('กรุณาเลือกสถานะการคืนให้ครบทุกชิ้น (' + missingStatus.map(a => a.Asset_ID).join(', ') + ')');
+      return;
+    }
+    showRtStep(3);
+  });
+  document.getElementById('rtStep3BackBtn').addEventListener('click', () => showRtStep(2));
+
+  /**
+   * แสดงรายการทรัพย์สินที่ "ผู้คืน" คนนี้ถือครองอยู่ตอนนี้ (กรอง allAssetsCache
+   * ด้วย Assigned_To ตรงกับชื่อที่กรอกไว้ในขั้นตอน 1 แบบไม่สนตัวพิมพ์เล็ก/ใหญ่)
+   * ให้กด "+ เพิ่ม" ได้เลยโดยไม่ต้องพิมพ์ค้นหาซ้ำ เร็วกว่าเวลาคืนของหลายชิ้น
+   * พร้อมกัน (ไม่ยิง API เพิ่ม ใช้ allAssetsCache ก้อนเดียวกับแท็บ "ทรัพย์สิน")
+   */
+  function renderRtHeldByBox() {
+    const name = document.getElementById('rtReturnerName').value.trim().toLowerCase();
+    const box = document.getElementById('rtHeldByBox');
+    if (!name) { box.innerHTML = ''; return; }
+
+    const selectedIds = new Set(rtSelectedAssets.map(a => a.Asset_ID));
+    const held = allAssetsCache.filter(a =>
+      String(a.Assigned_To || '').trim().toLowerCase() === name && !selectedIds.has(a.Asset_ID)
+    );
+
+    if (!held.length) {
+      box.innerHTML = rtSelectedAssets.length
+        ? ''
+        : '<div class="empty-state">ไม่พบทรัพย์สินที่ถือครองอยู่ในชื่อนี้ ลองค้นหาด้านล่างแทน</div>';
+      return;
+    }
+
+    box.innerHTML = `
+      <h4 style="margin:0 0 8px;">ทรัพย์สินที่ "${escapeHtml(document.getElementById('rtReturnerName').value.trim())}" ถือครองอยู่</h4>
+      ${held.map(a => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px;">
+          <div style="min-width:0;">
+            <div style="font-weight:600; font-size:13.5px;">${escapeHtml(a.Asset_ID)} — ${escapeHtml(a.Name)}</div>
+          </div>
+          <button type="button" class="btn btn-secondary rtAddBtn" data-asset-id="${escapeHtml(a.Asset_ID)}" style="flex-shrink:0;">+ เพิ่ม</button>
+        </div>
+      `).join('')}
+    `;
+    box.querySelectorAll('.rtAddBtn').forEach(btn => {
+      btn.addEventListener('click', () => addRtAsset(btn.dataset.assetId));
+    });
+  }
+
+  /** ค้นหาทรัพย์สินจาก allAssetsCache ก้อนเดียวกับแท็บ "ทรัพย์สิน" ไม่ยิง API เพิ่ม */
+  document.getElementById('rtAssetSearchInput').addEventListener('input', renderRtAssetSearchResults);
+
+  function renderRtAssetSearchResults() {
+    const keyword = document.getElementById('rtAssetSearchInput').value.trim().toLowerCase();
+    const container = document.getElementById('rtAssetSearchResults');
+    if (!keyword) { container.innerHTML = ''; return; }
+
+    const selectedIds = new Set(rtSelectedAssets.map(a => a.Asset_ID));
+    const matches = filterAssetsByKeyword_(allAssetsCache, keyword)
+      .filter(a => !selectedIds.has(a.Asset_ID))
+      .slice(0, 20);
+
+    container.innerHTML = matches.length
+      ? matches.map(a => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px;">
+          <div style="min-width:0;">
+            <div style="font-weight:600; font-size:13.5px;">${escapeHtml(a.Asset_ID)} — ${escapeHtml(a.Name)}</div>
+            <div style="font-size:12px; color:var(--muted);">
+              <span class="pill ${assetStatusPillClass(a.Status)}">${escapeHtml(a.Status)}</span>
+              ${a.Assigned_To ? ' · ผู้ถือครองปัจจุบัน: ' + escapeHtml(a.Assigned_To) : ''}
+            </div>
+          </div>
+          <button type="button" class="btn btn-secondary rtAddBtn" data-asset-id="${escapeHtml(a.Asset_ID)}" style="flex-shrink:0;">+ เพิ่ม</button>
+        </div>
+      `).join('')
+      : '<div class="empty-state">ไม่พบทรัพย์สินที่ตรงกับคำค้นหา</div>';
+
+    container.querySelectorAll('.rtAddBtn').forEach(btn => {
+      btn.addEventListener('click', () => addRtAsset(btn.dataset.assetId));
+    });
+  }
+
+  function addRtAsset(assetId) {
+    const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
+    if (!asset || rtSelectedAssets.some(a => a.Asset_ID === assetId)) return;
+    rtSelectedAssets.push({
+      Asset_ID: asset.Asset_ID, Name: asset.Name,
+      Brand_Model: asset.Brand_Model, Serial_Number: asset.Serial_Number,
+      status: '', note: ''
+    });
+    document.getElementById('rtAssetSearchInput').value = '';
+    renderRtAssetSearchResults();
+    renderRtHeldByBox();
+    renderRtSelectedList();
+  }
+
+  function removeRtAsset(assetId) {
+    rtSelectedAssets = rtSelectedAssets.filter(a => a.Asset_ID !== assetId);
+    renderRtHeldByBox();
+    renderRtSelectedList();
+  }
+
+  /**
+   * แสดงรายการที่เลือกไว้ พร้อมปุ่มเลือก "สถานะการคืน" (ครบ/ไม่ครบ/เสียหาย)
+   * และช่องหมายเหตุต่อชิ้น ทำเป็นปุ่มกดแทน dropdown เพราะกดง่ายกว่าบนมือถือ/
+   * แท็บเล็ตหน้างาน อัพเดทค่าตรงเข้า rtSelectedAssets ทันทีที่กด ไม่ต้องกด
+   * บันทึกซ้ำ
+   */
+  function renderRtSelectedList() {
+    const container = document.getElementById('rtSelectedList');
+    document.getElementById('rtSelectedCount').textContent = rtSelectedAssets.length;
+    container.innerHTML = rtSelectedAssets.length
+      ? rtSelectedAssets.map(a => `
+        <div style="padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+            <div style="font-size:13.5px;"><strong>${escapeHtml(a.Asset_ID)}</strong> — ${escapeHtml(a.Name)}</div>
+            <button type="button" class="btn btn-secondary rtRemoveBtn" data-asset-id="${escapeHtml(a.Asset_ID)}">ลบ</button>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+            ${RT_STATUS_OPTIONS.map(s => `
+              <button type="button" class="btn ${a.status === s ? 'btn-primary' : 'btn-secondary'} rtStatusBtn"
+                data-asset-id="${escapeHtml(a.Asset_ID)}" data-status="${escapeHtml(s)}"
+                style="flex:1; min-width:80px; padding:8px 10px; font-size:13px;">${escapeHtml(s)}</button>
+            `).join('')}
+          </div>
+          <input type="text" class="rtNoteInput" data-asset-id="${escapeHtml(a.Asset_ID)}" value="${escapeHtml(a.note || '')}"
+            placeholder="หมายเหตุของชิ้นนี้ (ถ้ามี เช่น ขาดสายชาร์จ / จอแตกมุมขวา)"
+            style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        </div>
+      `).join('')
+      : '<div class="empty-state">ยังไม่ได้เลือกทรัพย์สิน</div>';
+
+    container.querySelectorAll('.rtRemoveBtn').forEach(btn => {
+      btn.addEventListener('click', () => removeRtAsset(btn.dataset.assetId));
+    });
+    container.querySelectorAll('.rtStatusBtn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const item = rtSelectedAssets.find(a => a.Asset_ID === btn.dataset.assetId);
+        if (item) { item.status = btn.dataset.status; renderRtSelectedList(); }
+      });
+    });
+    container.querySelectorAll('.rtNoteInput').forEach(input => {
+      input.addEventListener('input', () => {
+        const item = rtSelectedAssets.find(a => a.Asset_ID === input.dataset.assetId);
+        if (item) item.note = input.value;
+      });
+    });
+  }
+
+  function buildRtSummary() {
+    const name = document.getElementById('rtReturnerName').value.trim();
+    const position = document.getElementById('rtPosition').value.trim();
+    const dept = document.getElementById('rtDepartment').value.trim();
+    const date = document.getElementById('rtDate').value;
+    const itemsHtml = rtSelectedAssets.map(a =>
+      escapeHtml(a.Asset_ID) + ' — ' + escapeHtml(a.Name) +
+      ` <span class="pill ${rtStatusPillClass_(a.status)}">${escapeHtml(a.status)}</span>` +
+      (a.note ? ' <span style="color:var(--muted);">(' + escapeHtml(a.note) + ')</span>' : '')
+    ).join('<br>');
+    document.getElementById('rtSummaryBox').innerHTML = `
+      <div><strong>ผู้คืน:</strong> ${escapeHtml(name)}${position ? ' (' + escapeHtml(position) + ')' : ''}</div>
+      ${dept ? `<div><strong>แผนก:</strong> ${escapeHtml(dept)}</div>` : ''}
+      <div><strong>วันที่คืน:</strong> ${escapeHtml(date)}</div>
+      <div style="margin-top:8px;"><strong>รายการที่จะคืน (${rtSelectedAssets.length} ชิ้น):</strong><br>${itemsHtml}</div>
+    `;
+  }
+
+  /** ลายเซ็น: โครงเดียวกับ initHoSignatureCanvas() ทุกประการ (ดูคอมเมนต์อธิบายที่นั่น) */
+  function initRtSignatureCanvas() {
+    const canvas = document.getElementById('rtSignatureCanvas');
+    rtSigCtx = canvas.getContext('2d');
+    rtSigCtx.strokeStyle = '#0F3B57';
+    rtSigCtx.lineWidth = 2.5;
+    rtSigCtx.lineCap = 'round';
+    rtSigCtx.lineJoin = 'round';
+
+    const posFromEvent = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      rtSigDrawing = true;
+      rtSigHasStroke = true;
+      canvas.setPointerCapture(e.pointerId);
+      const p = posFromEvent(e);
+      rtSigCtx.beginPath();
+      rtSigCtx.moveTo(p.x, p.y);
+      e.preventDefault();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!rtSigDrawing) return;
+      const p = posFromEvent(e);
+      rtSigCtx.lineTo(p.x, p.y);
+      rtSigCtx.stroke();
+      e.preventDefault();
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(evt => {
+      canvas.addEventListener(evt, () => { rtSigDrawing = false; });
+    });
+  }
+  initRtSignatureCanvas();
+
+  function clearRtSignature() {
+    const canvas = document.getElementById('rtSignatureCanvas');
+    rtSigCtx.clearRect(0, 0, canvas.width, canvas.height);
+    rtSigHasStroke = false;
+  }
+  document.getElementById('rtClearSignBtn').addEventListener('click', clearRtSignature);
+
+  function getRtSignatureDataUrl() {
+    if (!rtSigHasStroke) return null;
+    return document.getElementById('rtSignatureCanvas').toDataURL('image/png');
+  }
+
+  document.getElementById('rtSubmitBtn').addEventListener('click', async () => {
+    const signatureDataUrl = getRtSignatureDataUrl();
+    if (!signatureDataUrl) { showToast('กรุณาเซ็นชื่อยืนยันก่อนบันทึก'); return; }
+
+    const formSnapshot = {
+      returnerName: document.getElementById('rtReturnerName').value.trim(),
+      position: document.getElementById('rtPosition').value.trim(),
+      department: document.getElementById('rtDepartment').value.trim(),
+      dateReturn: document.getElementById('rtDate').value,
+      notes: document.getElementById('rtNotes').value.trim(),
+      items: rtSelectedAssets.map(a => ({
+        Asset_ID: a.Asset_ID, Name: a.Name,
+        Brand_Model: a.Brand_Model, Serial_Number: a.Serial_Number,
+        status: a.status, note: a.note || ''
+      })),
+      receivedBy: 'ณัฐพงศ์',
+      signatureDataUrl: signatureDataUrl
+    };
+
+    const btn = document.getElementById('rtSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = 'กำลังบันทึก...';
+    try {
+      const result = await apiPost('saveAssetReturn', {
+        returnerName: formSnapshot.returnerName,
+        position: formSnapshot.position,
+        department: formSnapshot.department,
+        dateReturn: formSnapshot.dateReturn,
+        notes: formSnapshot.notes,
+        items: formSnapshot.items.map(a => ({ assetId: a.Asset_ID, status: a.status, note: a.note })),
+        signatureBase64: signatureDataUrl.split(',')[1],
+        signatureMimeType: 'image/png',
+        receivedBy: formSnapshot.receivedBy
+      });
+      showToast(result.message);
+
+      rtLastSavedReturn = { ...formSnapshot, returnId: result.returnId };
+      document.getElementById('rtStep3FormArea').style.display = 'none';
+      document.getElementById('rtSuccessReturnId').textContent = result.returnId || '-';
+      document.getElementById('rtSuccessBox').style.display = '';
+
+      await Promise.all([loadAssets(), loadAssetReturns()]);
+    } catch (err) {
+      showToast('บันทึกไม่สำเร็จ: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '✅ ยืนยันส่งคืนทรัพย์สิน';
+    }
+  });
+
+  document.getElementById('rtPrintReceiptBtn').addEventListener('click', () => {
+    if (!rtLastSavedReturn) return;
+    printAssetReturnReceipt_(rtLastSavedReturn);
+  });
+  document.getElementById('rtNewFormBtn').addEventListener('click', resetReturnForm);
+
+  function resetReturnForm() {
+    document.getElementById('rtReturnerName').value = '';
+    document.getElementById('rtPosition').value = '';
+    document.getElementById('rtDepartment').value = '';
+    document.getElementById('rtDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('rtNotes').value = '';
+    rtSelectedAssets = [];
+    rtLastSavedReturn = null;
+    document.getElementById('rtAssetSearchInput').value = '';
+    renderRtAssetSearchResults();
+    renderRtHeldByBox();
+    renderRtSelectedList();
+    clearRtSignature();
+    document.getElementById('rtStep3FormArea').style.display = '';
+    document.getElementById('rtSuccessBox').style.display = 'none';
+    showRtStep(1);
+  }
+
+  async function loadAssetReturns() {
+    rtReturnsCache = await apiGet('getAssetReturns');
+    renderRtHistory();
+  }
+
+  function renderRtHistory() {
+    const container = document.getElementById('rtHistoryList');
+    const recent = rtReturnsCache.slice(0, 15);
+    container.innerHTML = recent.length
+      ? recent.map(r => {
+          const items = Array.isArray(r.Items) ? r.Items : [];
+          const itemsHtml = items.map(it =>
+            `<span class="pill ${rtStatusPillClass_(it.status)}" style="margin:2px 4px 2px 0;">${escapeHtml(it.assetId)}: ${escapeHtml(it.status)}</span>`
+          ).join('');
+          return `
+        <div style="padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; font-size:13.5px;">
+          <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+            <strong>${escapeHtml(r.Returner_Name)}</strong>
+            <span style="color:var(--muted);">${escapeHtml(r.Date_Return)}</span>
+          </div>
+          <div style="color:var(--muted); margin:2px 0;">${escapeHtml(r.Department || '-')} · ${r.Item_Count} ชิ้น · เลขที่ใบ ${escapeHtml(r.Return_ID)}</div>
+          <div style="margin-bottom:6px;">${itemsHtml}</div>
+          <div style="display:flex; gap:14px; align-items:center;">
+            <button type="button" class="view-rt-receipt-btn" data-return-id="${escapeHtml(r.Return_ID)}"
+              style="font-size:12.5px; background:none; border:none; color:var(--accent, #0F3B57); text-decoration:underline; padding:0; cursor:pointer;">🖨️ ดู/พิมพ์ใบส่งคืน (A4)</button>
+          </div>
+        </div>
+      `;
+        }).join('')
+      : '<div class="empty-state">ยังไม่มีใบส่งคืน</div>';
+  }
+
+  // Event delegation ตัวเดียว เหตุผลเดียวกับปุ่ม "ดู/พิมพ์ใบเซ็นรับ" ด้านบน
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.view-rt-receipt-btn');
+    if (!btn) return;
+    viewReturnReceiptByReturnId_(btn.dataset.returnId);
+  });
+
+  /** เปิดดู/พิมพ์ใบส่งคืนย้อนหลัง จากเลขที่ใบ (โครงเดียวกับ viewHandoverReceiptByReceiptId_) */
+  async function viewReturnReceiptByReturnId_(returnId) {
+    let ret = rtReturnsCache.find(r => r.Return_ID === returnId);
+    if (!ret) {
+      try {
+        rtReturnsCache = await apiGet('getAssetReturns');
+        ret = rtReturnsCache.find(r => r.Return_ID === returnId);
+      } catch (e) { /* ปล่อยผ่าน จะไปเจอ toast ข้อความ "ไม่พบ" ด้านล่างแทน */ }
+    }
+    if (!ret) { showToast('ไม่พบใบส่งคืนเลขที่ ' + returnId); return; }
+
+    const items = Array.isArray(ret.Items) ? ret.Items : [];
+    const fullItems = items.map(it => {
+      const asset = allAssetsCache.find(a => a.Asset_ID === it.assetId);
+      return {
+        Asset_ID: it.assetId,
+        Name: asset ? asset.Name : '(ไม่พบข้อมูลทรัพย์สินนี้แล้ว)',
+        Brand_Model: asset ? asset.Brand_Model : '',
+        Serial_Number: asset ? asset.Serial_Number : '',
+        status: it.status,
+        note: it.note
+      };
+    });
+
+    openReturnReceiptDocument_({
+      returnId: ret.Return_ID,
+      dateReturn: ret.Date_Return,
+      returnerName: ret.Returner_Name,
+      position: ret.Position,
+      department: ret.Department,
+      notes: ret.Notes,
+      receivedBy: ret.Received_By,
+      items: fullItems,
+      signatureSrc: driveDirectImageUrl_(ret.Signature_URL),
+      signedAt: ret.Created_At
+    });
+  }
+
+  /** ใช้ทันทีหลังกดยืนยันเซ็นสำเร็จ (โครงเดียวกับ printAssetHandoverReceipt_) */
+  function printAssetReturnReceipt_(data) {
+    openReturnReceiptDocument_({
+      returnId: data.returnId,
+      dateReturn: data.dateReturn,
+      returnerName: data.returnerName,
+      position: data.position,
+      department: data.department,
+      notes: data.notes,
+      receivedBy: data.receivedBy,
+      items: data.items,
+      signatureSrc: data.signatureDataUrl,
+      signedAt: formatDateTimeForDisplay_(new Date())
+    });
+  }
+
+  /**
+   * สร้างเอกสารใบส่งคืนขนาด A4 ในหน้าต่างใหม่ — โครงเดียวกับ
+   * openHandoverReceiptDocument_() ทุกประการ ต่างกันแค่มีคอลัมน์ "สถานะการคืน"
+   * เพิ่มในตารางรายการ (พร้อมหมายเหตุต่อชิ้นถ้ามี)
+   */
+  function openReturnReceiptDocument_(opts) {
+    const w = window.open('', '_blank', 'width=860,height=1000');
+    if (!w) { showToast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่'); return; }
+
+    const itemRows = (opts.items || []).map((it, idx) => {
+      const extras = [];
+      if (it.Brand_Model) extras.push(escapeHtml(it.Brand_Model));
+      if (it.Serial_Number) extras.push('S/N: ' + escapeHtml(it.Serial_Number));
+      const extraText = extras.length ? ` <span class="item-extra">(${extras.join(' · ')})</span>` : '';
+      const noteText = it.note ? ` <span class="item-extra">— ${escapeHtml(it.note)}</span>` : '';
+      return `
+        <tr>
+          <td>${idx + 1}</td>
+          <td>${escapeHtml(it.Asset_ID)}</td>
+          <td>${escapeHtml(it.Name || '')}${extraText}</td>
+          <td>${escapeHtml(it.status || '')}${noteText}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const printedAt = formatDateTimeForDisplay_(new Date());
+    const signedAtText = opts.signedAt || printedAt;
+
+    w.document.write(`
+      <html><head><title>ใบส่งคืนทรัพย์สิน ${escapeHtml(opts.returnId || '')}</title>
+      <style>
+        @page { size: A4; margin: 16mm 14mm; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', 'Sarabun', sans-serif; color:#0F3B57; margin:0; }
+        .toolbar { padding:12px 16px; background:#f2f6f8; border-bottom:1px solid #dbe6ea; display:flex; justify-content:flex-end; }
+        .toolbar button { padding:9px 18px; border-radius:8px; border:none; background:#0F3B57; color:#fff; font-size:14px; cursor:pointer; }
+        @media print { .toolbar { display:none; } }
+        .sheet { max-width:720px; margin:24px auto; padding:0 8px 40px; min-height:255mm; display:flex; flex-direction:column; }
+        .doc-header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:18px; }
+        .doc-header img { width:110px; height:auto; flex-shrink:0; }
+        h1 { font-size:21px; margin:0 0 2px; }
+        .sub { color:#5b7684; font-size:13px; }
+        table.meta { width:100%; border-collapse:collapse; font-size:14px; margin-bottom:18px; }
+        table.meta td { padding:4px 0; vertical-align:top; }
+        table.meta td.label { width:130px; color:#5b7684; white-space:nowrap; }
+        table.items { width:100%; border-collapse:collapse; font-size:13.5px; margin-bottom:28px; }
+        table.items th, table.items td { border:1px solid #cdd9de; padding:6px 8px; text-align:left; }
+        table.items th { background:#eef4f6; }
+        .item-extra { color:#5b7684; font-size:12px; }
+        .notes-section { margin-bottom:24px; padding:10px 12px; background:#f7fafb; border:1px solid #e0e9ec; border-radius:6px; }
+        .notes-title { font-weight:700; font-size:13px; margin-bottom:4px; }
+        .notes-body { font-size:13px; white-space:pre-wrap; line-height:1.6; }
+        .sign-box { text-align:left; margin-top:auto; align-self:flex-start; padding-top:12px; }
+        .sign-box img { max-width:140px; max-height:60px; display:block; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
+        .sign-placeholder { height:60px; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
+        .sign-name { margin-bottom:2px; }
+        .sign-datetime { font-size:12px; color:#5b7684; }
+        .footer-note { margin-top:10px; font-size:11px; color:#8fa3ab; }
+      </style></head>
+      <body>
+        <div class="toolbar"><button onclick="window.print()">🖨️ พิมพ์เอกสารนี้</button></div>
+        <div class="sheet">
+          <div class="doc-header">
+            <div>
+              <h1>ใบส่งคืนทรัพย์สิน</h1>
+              <div class="sub">Sandsea Resort · IT Department · เลขที่ใบ ${escapeHtml(opts.returnId || '')}</div>
+            </div>
+            <img src="${SANDSEA_LOGO_DATA_URI}" alt="Sand Sea Resort Railay Beach">
+          </div>
+          <table class="meta">
+            <tr><td class="label">ผู้คืน</td><td>${escapeHtml(opts.returnerName || '')}${opts.position ? ' (' + escapeHtml(opts.position) + ')' : ''}</td></tr>
+            ${opts.department ? `<tr><td class="label">แผนก</td><td>${escapeHtml(opts.department)}</td></tr>` : ''}
+            <tr><td class="label">วันที่คืน</td><td>${escapeHtml(opts.dateReturn || '')}</td></tr>
+            <tr><td class="label">ผู้รับคืน</td><td>${escapeHtml(opts.receivedBy || '-')}</td></tr>
+          </table>
+          <table class="items">
+            <thead><tr><th style="width:28px;">#</th><th style="width:130px;">รหัสทรัพย์สิน</th><th>รายการ</th><th style="width:170px;">สถานะการคืน</th></tr></thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+          ${opts.notes ? `
+          <div class="notes-section">
+            <div class="notes-title">หมายเหตุ</div>
+            <div class="notes-body">${escapeHtml(opts.notes)}</div>
+          </div>` : ''}
+          <div class="sign-box">
+            ${opts.signatureSrc ? `<img src="${opts.signatureSrc}" alt="ลายเซ็น">` : `<div class="sign-placeholder"></div>`}
+            <div class="sign-name">ลายเซ็นผู้คืน: ${escapeHtml(opts.returnerName || '')}</div>
+            <div class="sign-datetime">วันที่/เวลาที่เซ็น: ${escapeHtml(signedAtText)}</div>
+          </div>
+          <div class="footer-note">พิมพ์จากระบบ Sandsea IT เมื่อ ${escapeHtml(printedAt)}</div>
+        </div>
+      </body></html>
+    `);
+    w.document.close();
   }
 
   // ===================================================================
