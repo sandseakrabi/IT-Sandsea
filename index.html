@@ -2491,6 +2491,13 @@
   // แล้วเปลี่ยนเป็นปุ่มเปิดดู/พิมพ์ใบนั้นได้เลย จากหน้าประวัติของทรัพย์สินชิ้นนั้น
   const HO_RECEIPT_REF_RE = /เซ็นรับตามใบ\s+(HO-\d+)/;
 
+  // เช่นเดียวกับด้านบน แต่จับข้อความ "ใบส่งคืน RT-xxxxxx" ที่ processReturnItem_()
+  // (Assets.gs) ฝากไว้ใน Detail ของประวัติทรัพย์สินทุกครั้งที่รับคืนผ่านฟอร์ม
+  // ส่งคืน — ใช้ปุ่ม/ฟังก์ชันเดิมกับแท็บ "ประวัติใบส่งคืน" ทุกอย่าง
+  // (view-rt-receipt-btn + viewReturnReceiptByReturnId_ มี event delegation
+  // ผูกไว้ที่ document แล้วด้านล่าง ไม่ต้องผูกซ้ำตรงนี้)
+  const RT_RETURN_REF_RE = /ใบส่งคืน\s+(RT-\d+)/;
+
   function renderHistoryItems_(items, titleFn, detailFn) {
     if (!items || !items.length) {
       return '<div style="color:var(--muted);font-size:13px;padding:4px 0;">ยังไม่มีประวัติ</div>';
@@ -2503,6 +2510,12 @@
              style="margin-top:4px; font-size:12px; background:none; border:none; color:var(--accent, #0F3B57); text-decoration:underline; padding:0; cursor:pointer;">
              📄 ดู/พิมพ์ใบเซ็นรับ ${escapeHtml(receiptMatch[1])}</button>`
         : '';
+      const returnMatch = detailText.match(RT_RETURN_REF_RE);
+      const returnBtn = returnMatch
+        ? `<button type="button" class="view-rt-receipt-btn" data-return-id="${escapeHtml(returnMatch[1])}"
+             style="margin-top:4px; font-size:12px; background:none; border:none; color:var(--accent, #0F3B57); text-decoration:underline; padding:0; cursor:pointer;">
+             📄 ดู/พิมพ์ใบส่งคืน ${escapeHtml(returnMatch[1])}</button>`
+        : '';
       return `
         <div class="history-item">
           <div class="history-time">${h.Timestamp}</div>
@@ -2511,6 +2524,7 @@
             ${detailText ? `<div class="history-comment">${escapeHtml(detailText)}</div>` : ''}
             ${h.Changed_By ? `<div class="history-by">โดย: ${escapeHtml(h.Changed_By)}</div>` : ''}
             ${receiptBtn}
+            ${returnBtn}
           </div>
         </div>
       `;
