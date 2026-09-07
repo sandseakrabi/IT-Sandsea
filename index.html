@@ -775,6 +775,7 @@
             <span class="badge" id="caseBadge">0</span>
           </div>
           <div class="tab" data-panel="assets"><span class="tab-icon">🖥️</span>ทรัพย์สิน</div>
+          <div class="tab" data-panel="handover"><span class="tab-icon">✍️</span>ฟอร์มรับทรัพย์สิน</div>
           <div class="tab" data-panel="stockit">
             <span class="tab-icon">🗃️</span>Stock IT
             <span class="badge" id="stockBadge">0</span>
@@ -948,6 +949,66 @@
           <div id="assetList"></div>
           <!-- แบ่งหน้า 10 รายการ/หน้า (เดิมโชว์รวดเดียวหมดทั้ง ~200 ชิ้น ยาวเกินไป) -->
           <div class="pagination-bar" id="assetPaginationBar" style="display:none;"></div>
+        </div>
+
+        <!-- ===================================================================
+             แท็บ "ฟอร์มรับทรัพย์สิน" — ใบเซ็นรับตอนส่งมอบอุปกรณ์ให้พนักงาน
+             (แยกจากปุ่ม "เบิก/มอบหมาย" เดิมในแท็บทรัพย์สิน แต่ผูกกันตรงที่: เซ็น
+             เสร็จแล้วจะไปสั่งเบิก/มอบหมายให้ทรัพย์สินแต่ละชิ้นให้อัตโนมัติ ใช้
+             assignAsset() ตัวเดิมทุกอย่าง — ดู saveAssetHandover() ใน Assets.gs)
+             ทำเป็น 3 ขั้นตอนในหน้าเดียว เหมาะกับ IT ถือแท็บเล็ตไปให้เซ็นสดหน้างาน
+             =================================================================== -->
+        <div class="panel" id="panel-handover">
+
+          <!-- ขั้นตอน 1: ข้อมูลผู้รับ -->
+          <div class="card" id="hoStep1">
+            <h3>ขั้นตอน 1 จาก 3 — ข้อมูลผู้รับ</h3>
+            <div class="field"><label>ชื่อ-สกุลผู้รับ *</label><input type="text" id="hoReceiverName" placeholder="ชื่อพนักงานผู้รับของ"></div>
+            <div class="field"><label>ตำแหน่ง</label><input type="text" id="hoPosition" placeholder="เช่น พนักงานต้อนรับ, บัญชี"></div>
+            <div class="field"><label>แผนก</label><input type="text" id="hoDepartment" placeholder="เช่น ต้อนรับ, แม่บ้าน, ครัว, บัญชี"></div>
+            <div class="field"><label>วันที่เบิก</label><input type="date" id="hoDate"></div>
+            <div class="field"><label>หมายเหตุ</label><textarea id="hoNotes" placeholder="ถ้ามี (ไม่บังคับ)"></textarea></div>
+            <button type="button" class="btn btn-primary" style="width:100%;" id="hoStep1NextBtn">ถัดไป: เลือกทรัพย์สิน →</button>
+          </div>
+
+          <!-- ขั้นตอน 2: เลือกทรัพย์สินที่จะมอบ (เลือกได้หลายชิ้น) -->
+          <div class="card" id="hoStep2" style="display:none;">
+            <h3>ขั้นตอน 2 จาก 3 — เลือกทรัพย์สินที่จะมอบ</h3>
+            <div style="background:#E3F0F7; color:#0F3B57; border:1px solid #bcdcff; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.6;">
+              พิมพ์ค้นหาแล้วกด "+ เพิ่ม" ทีละชิ้น เลือกได้ไม่จำกัดจำนวน
+            </div>
+            <input type="text" id="hoAssetSearchInput" placeholder="ค้นหารหัส / ชื่อ / Serial" autocomplete="off"
+              style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px; margin-bottom:8px;">
+            <div id="hoAssetSearchResults" style="max-height:260px; overflow-y:auto; margin-bottom:16px;"></div>
+
+            <h4 style="margin:0 0 8px;">รายการที่จะมอบ (<span id="hoSelectedCount">0</span> ชิ้น)</h4>
+            <div id="hoSelectedList" style="margin-bottom:16px;"></div>
+
+            <div style="display:flex; gap:8px;">
+              <button type="button" class="btn btn-secondary" id="hoStep2BackBtn" style="flex:1;">← ย้อนกลับ</button>
+              <button type="button" class="btn btn-primary" id="hoStep2NextBtn" style="flex:1;">ถัดไป: เซ็นชื่อ →</button>
+            </div>
+          </div>
+
+          <!-- ขั้นตอน 3: สรุป + เซ็นชื่อยืนยัน -->
+          <div class="card" id="hoStep3" style="display:none;">
+            <h3>ขั้นตอน 3 จาก 3 — เซ็นชื่อยืนยันรับของ</h3>
+            <div id="hoSummaryBox" style="background:var(--foam); border-radius:10px; padding:12px 14px; margin-bottom:14px; font-size:13.5px; line-height:1.7;"></div>
+            <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">ลงลายเซ็นด้านล่างด้วยนิ้ว/ปากกา</label>
+            <canvas id="hoSignatureCanvas" width="600" height="220"
+              style="border:1px solid var(--border); border-radius:10px; touch-action:none; width:100%; height:220px; background:#fff; display:block;"></canvas>
+            <button type="button" class="btn btn-secondary" id="hoClearSignBtn" style="width:100%; margin-top:8px;">🧹 ล้าง/เซ็นใหม่</button>
+            <div style="display:flex; gap:8px; margin-top:16px;">
+              <button type="button" class="btn btn-secondary" id="hoStep3BackBtn" style="flex:1;">← ย้อนกลับ</button>
+              <button type="button" class="btn btn-primary" id="hoSubmitBtn" style="flex:2;">✅ ยืนยันรับทรัพย์สิน</button>
+            </div>
+          </div>
+
+          <!-- ประวัติใบเซ็นรับล่าสุด -->
+          <div class="card">
+            <h3>ประวัติใบเซ็นรับล่าสุด</h3>
+            <div id="hoHistoryList"></div>
+          </div>
         </div>
 
         <!-- ===================================================================
@@ -1468,6 +1529,7 @@
     document.getElementById('apDate').value = today;
     document.getElementById('cctvDate').value = today;
     document.getElementById('backupDate').value = today;
+    document.getElementById('hoDate').value = today;
 
     try {
       appConfig = await apiGet('getConfig');
@@ -1510,6 +1572,7 @@
       loadBackupLogs(),
       loadCases(),
       loadAssets(),
+      loadAssetHandovers(),
       loadSupplies(),
       loadNetworkMap()
     ]);
@@ -2873,6 +2936,239 @@
       </body></html>
     `);
     w.document.close();
+  }
+
+  // ===================================================================
+  // ส่วนที่ 12.7: หน้า IT — ฟอร์มรับทรัพย์สิน (ใบเซ็นรับ)
+  // -------------------------------------------------------------------
+  // 3 ขั้นตอนในหน้าเดียว: (1) ข้อมูลผู้รับ (2) เลือกทรัพย์สินหลายชิ้น
+  // (3) เซ็นชื่อยืนยัน — กดยืนยันแล้วเรียก saveAssetHandover() ฝั่ง server
+  // ซึ่งจะไปสั่ง assignAsset() ให้ทุกชิ้นที่เลือกอัตโนมัติ (ดู Assets.gs)
+  // ===================================================================
+  let hoSelectedAssets = [];   // ทรัพย์สินที่เลือกไว้ในใบนี้ (object เต็มจาก allAssetsCache)
+  let hoHandoversCache = [];   // ประวัติใบเซ็นรับ (โหลดจาก getAssetHandovers)
+  let hoSigCtx = null;
+  let hoSigDrawing = false;
+  let hoSigHasStroke = false;  // true ทันทีที่ลากเส้นแรก ใช้เช็คก่อนบันทึกว่าเซ็นแล้วจริง
+
+  function showHoStep(step) {
+    [1, 2, 3].forEach(n => {
+      document.getElementById('hoStep' + n).style.display = (n === step) ? '' : 'none';
+    });
+    if (step === 3) buildHoSummary();
+  }
+
+  document.getElementById('hoStep1NextBtn').addEventListener('click', () => {
+    const name = document.getElementById('hoReceiverName').value.trim();
+    if (!name) { showToast('กรุณากรอกชื่อผู้รับก่อน'); return; }
+    showHoStep(2);
+  });
+  document.getElementById('hoStep2BackBtn').addEventListener('click', () => showHoStep(1));
+  document.getElementById('hoStep2NextBtn').addEventListener('click', () => {
+    if (!hoSelectedAssets.length) { showToast('กรุณาเลือกทรัพย์สินอย่างน้อย 1 ชิ้น'); return; }
+    showHoStep(3);
+  });
+  document.getElementById('hoStep3BackBtn').addEventListener('click', () => showHoStep(2));
+
+  /** ค้นหาทรัพย์สินจาก allAssetsCache ก้อนเดียวกับแท็บ "ทรัพย์สิน" ไม่ยิง API เพิ่ม */
+  document.getElementById('hoAssetSearchInput').addEventListener('input', renderHoAssetSearchResults);
+
+  function renderHoAssetSearchResults() {
+    const keyword = document.getElementById('hoAssetSearchInput').value.trim().toLowerCase();
+    const container = document.getElementById('hoAssetSearchResults');
+    if (!keyword) { container.innerHTML = ''; return; }
+
+    const selectedIds = new Set(hoSelectedAssets.map(a => a.Asset_ID));
+    const matches = filterAssetsByKeyword_(allAssetsCache, keyword)
+      .filter(a => !selectedIds.has(a.Asset_ID))
+      .slice(0, 20);
+
+    container.innerHTML = matches.length
+      ? matches.map(a => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px;">
+          <div style="min-width:0;">
+            <div style="font-weight:600; font-size:13.5px;">${escapeHtml(a.Asset_ID)} — ${escapeHtml(a.Name)}</div>
+            <div style="font-size:12px; color:var(--muted);">
+              <span class="pill ${assetStatusPillClass(a.Status)}">${escapeHtml(a.Status)}</span>
+              ${a.Assigned_To ? ' · ผู้ถือครองปัจจุบัน: ' + escapeHtml(a.Assigned_To) : ''}
+            </div>
+          </div>
+          <button type="button" class="btn btn-secondary hoAddBtn" data-asset-id="${escapeHtml(a.Asset_ID)}" style="flex-shrink:0;">+ เพิ่ม</button>
+        </div>
+      `).join('')
+      : '<div class="empty-state">ไม่พบทรัพย์สินที่ตรงกับคำค้นหา</div>';
+
+    container.querySelectorAll('.hoAddBtn').forEach(btn => {
+      btn.addEventListener('click', () => addHoAsset(btn.dataset.assetId));
+    });
+  }
+
+  function addHoAsset(assetId) {
+    const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
+    if (!asset || hoSelectedAssets.some(a => a.Asset_ID === assetId)) return;
+    hoSelectedAssets.push(asset);
+    document.getElementById('hoAssetSearchInput').value = '';
+    renderHoAssetSearchResults();
+    renderHoSelectedList();
+  }
+
+  function removeHoAsset(assetId) {
+    hoSelectedAssets = hoSelectedAssets.filter(a => a.Asset_ID !== assetId);
+    renderHoSelectedList();
+  }
+
+  function renderHoSelectedList() {
+    const container = document.getElementById('hoSelectedList');
+    document.getElementById('hoSelectedCount').textContent = hoSelectedAssets.length;
+    container.innerHTML = hoSelectedAssets.length
+      ? hoSelectedAssets.map(a => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; background:var(--foam); border-radius:8px; margin-bottom:6px;">
+          <div style="font-size:13.5px;"><strong>${escapeHtml(a.Asset_ID)}</strong> — ${escapeHtml(a.Name)}</div>
+          <button type="button" class="btn btn-secondary hoRemoveBtn" data-asset-id="${escapeHtml(a.Asset_ID)}">ลบ</button>
+        </div>
+      `).join('')
+      : '<div class="empty-state">ยังไม่ได้เลือกทรัพย์สิน</div>';
+
+    container.querySelectorAll('.hoRemoveBtn').forEach(btn => {
+      btn.addEventListener('click', () => removeHoAsset(btn.dataset.assetId));
+    });
+  }
+
+  function buildHoSummary() {
+    const name = document.getElementById('hoReceiverName').value.trim();
+    const position = document.getElementById('hoPosition').value.trim();
+    const dept = document.getElementById('hoDepartment').value.trim();
+    const date = document.getElementById('hoDate').value;
+    const itemsHtml = hoSelectedAssets.map(a => escapeHtml(a.Asset_ID) + ' — ' + escapeHtml(a.Name)).join('<br>');
+    document.getElementById('hoSummaryBox').innerHTML = `
+      <div><strong>ผู้รับ:</strong> ${escapeHtml(name)}${position ? ' (' + escapeHtml(position) + ')' : ''}</div>
+      ${dept ? `<div><strong>แผนก:</strong> ${escapeHtml(dept)}</div>` : ''}
+      <div><strong>วันที่เบิก:</strong> ${escapeHtml(date)}</div>
+      <div style="margin-top:8px;"><strong>รายการที่จะรับ (${hoSelectedAssets.length} ชิ้น):</strong><br>${itemsHtml}</div>
+    `;
+  }
+
+  /**
+   * ลายเซ็น: วาดด้วย Canvas 2D ธรรมดา ไม่ใช้ไลบรารีเสริม ใช้ Pointer Events
+   * ตัวเดียวรองรับทั้งนิ้ว/ปากกา/เมาส์ (ต่างจาก touch/mouse event แยกกันแบบเก่า)
+   * ต้องคำนวณ scale ระหว่างขนาดจริงของ canvas (600x220) กับขนาดที่แสดงผลจริง
+   * บนจอ (ยืด/หดตาม CSS width:100%) ไม่งั้นเส้นที่วาดจะเพี้ยนตำแหน่งบนจอเล็ก
+   */
+  function initHoSignatureCanvas() {
+    const canvas = document.getElementById('hoSignatureCanvas');
+    hoSigCtx = canvas.getContext('2d');
+    hoSigCtx.strokeStyle = '#0F3B57';
+    hoSigCtx.lineWidth = 2.5;
+    hoSigCtx.lineCap = 'round';
+    hoSigCtx.lineJoin = 'round';
+
+    const posFromEvent = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+    };
+
+    canvas.addEventListener('pointerdown', (e) => {
+      hoSigDrawing = true;
+      hoSigHasStroke = true;
+      canvas.setPointerCapture(e.pointerId);
+      const p = posFromEvent(e);
+      hoSigCtx.beginPath();
+      hoSigCtx.moveTo(p.x, p.y);
+      e.preventDefault();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!hoSigDrawing) return;
+      const p = posFromEvent(e);
+      hoSigCtx.lineTo(p.x, p.y);
+      hoSigCtx.stroke();
+      e.preventDefault();
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(evt => {
+      canvas.addEventListener(evt, () => { hoSigDrawing = false; });
+    });
+  }
+  initHoSignatureCanvas();
+
+  function clearHoSignature() {
+    const canvas = document.getElementById('hoSignatureCanvas');
+    hoSigCtx.clearRect(0, 0, canvas.width, canvas.height);
+    hoSigHasStroke = false;
+  }
+  document.getElementById('hoClearSignBtn').addEventListener('click', clearHoSignature);
+
+  /** คืนค่า null ถ้ายังไม่ได้ลากเส้นอะไรเลย กันเผลอบันทึกลายเซ็นเปล่าๆ */
+  function getHoSignatureDataUrl() {
+    if (!hoSigHasStroke) return null;
+    return document.getElementById('hoSignatureCanvas').toDataURL('image/png');
+  }
+
+  document.getElementById('hoSubmitBtn').addEventListener('click', async () => {
+    const signatureDataUrl = getHoSignatureDataUrl();
+    if (!signatureDataUrl) { showToast('กรุณาเซ็นชื่อยืนยันก่อนบันทึก'); return; }
+
+    const btn = document.getElementById('hoSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = 'กำลังบันทึก...';
+    try {
+      const result = await apiPost('saveAssetHandover', {
+        receiverName: document.getElementById('hoReceiverName').value.trim(),
+        position: document.getElementById('hoPosition').value.trim(),
+        department: document.getElementById('hoDepartment').value.trim(),
+        dateHandover: document.getElementById('hoDate').value,
+        notes: document.getElementById('hoNotes').value.trim(),
+        assetIds: hoSelectedAssets.map(a => a.Asset_ID),
+        signatureBase64: signatureDataUrl.split(',')[1],
+        signatureMimeType: 'image/png',
+        issuedBy: 'ณัฐพงศ์'
+      });
+      showToast(result.message);
+      resetHandoverForm();
+      await Promise.all([loadAssets(), loadAssetHandovers()]);
+    } catch (err) {
+      showToast('บันทึกไม่สำเร็จ: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '✅ ยืนยันรับทรัพย์สิน';
+    }
+  });
+
+  function resetHandoverForm() {
+    document.getElementById('hoReceiverName').value = '';
+    document.getElementById('hoPosition').value = '';
+    document.getElementById('hoDepartment').value = '';
+    document.getElementById('hoDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('hoNotes').value = '';
+    hoSelectedAssets = [];
+    document.getElementById('hoAssetSearchInput').value = '';
+    renderHoAssetSearchResults();
+    renderHoSelectedList();
+    clearHoSignature();
+    showHoStep(1);
+  }
+
+  async function loadAssetHandovers() {
+    hoHandoversCache = await apiGet('getAssetHandovers');
+    renderHoHistory();
+  }
+
+  function renderHoHistory() {
+    const container = document.getElementById('hoHistoryList');
+    const recent = hoHandoversCache.slice(0, 15);
+    container.innerHTML = recent.length
+      ? recent.map(r => `
+        <div style="padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:8px; font-size:13.5px;">
+          <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+            <strong>${escapeHtml(r.Receiver_Name)}</strong>
+            <span style="color:var(--muted);">${escapeHtml(r.Date_Handover)}</span>
+          </div>
+          <div style="color:var(--muted); margin:2px 0;">${escapeHtml(r.Department || '-')} · ${r.Item_Count} ชิ้น · เลขที่ใบ ${escapeHtml(r.Receipt_ID)}</div>
+          <div style="font-size:12.5px; color:var(--muted); margin-bottom:4px;">${escapeHtml(r.Asset_IDs)}</div>
+          ${r.Signature_URL ? `<a href="${r.Signature_URL}" target="_blank" rel="noopener" style="font-size:12.5px;">🖊️ ดูลายเซ็น</a>` : ''}
+        </div>
+      `).join('')
+      : '<div class="empty-state">ยังไม่มีใบเซ็นรับ</div>';
   }
 
   // ===================================================================
