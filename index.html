@@ -993,14 +993,32 @@
           <!-- ขั้นตอน 3: สรุป + เซ็นชื่อยืนยัน -->
           <div class="card" id="hoStep3" style="display:none;">
             <h3>ขั้นตอน 3 จาก 3 — เซ็นชื่อยืนยันรับของ</h3>
-            <div id="hoSummaryBox" style="background:var(--foam); border-radius:10px; padding:12px 14px; margin-bottom:14px; font-size:13.5px; line-height:1.7;"></div>
-            <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">ลงลายเซ็นด้านล่างด้วยนิ้ว/ปากกา</label>
-            <canvas id="hoSignatureCanvas" width="600" height="220"
-              style="border:1px solid var(--border); border-radius:10px; touch-action:none; width:100%; height:220px; background:#fff; display:block;"></canvas>
-            <button type="button" class="btn btn-secondary" id="hoClearSignBtn" style="width:100%; margin-top:8px;">🧹 ล้าง/เซ็นใหม่</button>
-            <div style="display:flex; gap:8px; margin-top:16px;">
-              <button type="button" class="btn btn-secondary" id="hoStep3BackBtn" style="flex:1;">← ย้อนกลับ</button>
-              <button type="button" class="btn btn-primary" id="hoSubmitBtn" style="flex:2;">✅ ยืนยันรับทรัพย์สิน</button>
+
+            <!-- hoStep3FormArea: ส่วนกรอก/เซ็น ถูกซ่อนหลังบันทึกสำเร็จ แล้วสลับไปโชว์
+                 hoSuccessBox แทน เพื่อให้ปุ่ม "พิมพ์/ดูใบเซ็นรับ" โผล่ทันทีหลังเซ็นเสร็จ
+                 โดยไม่ต้องรีเซ็ตฟอร์มก่อน (เดิมกดยืนยันปุ๊บฟอร์มถูกเคลียร์ทันที ไม่มี
+                 ทางย้อนกลับไปพิมพ์ใบที่เพิ่งเซ็นได้เลย) -->
+            <div id="hoStep3FormArea">
+              <div id="hoSummaryBox" style="background:var(--foam); border-radius:10px; padding:12px 14px; margin-bottom:14px; font-size:13.5px; line-height:1.7;"></div>
+              <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">ลงลายเซ็นด้านล่างด้วยนิ้ว/ปากกา</label>
+              <canvas id="hoSignatureCanvas" width="600" height="220"
+                style="border:1px solid var(--border); border-radius:10px; touch-action:none; width:100%; height:220px; background:#fff; display:block;"></canvas>
+              <button type="button" class="btn btn-secondary" id="hoClearSignBtn" style="width:100%; margin-top:8px;">🧹 ล้าง/เซ็นใหม่</button>
+              <div style="display:flex; gap:8px; margin-top:16px;">
+                <button type="button" class="btn btn-secondary" id="hoStep3BackBtn" style="flex:1;">← ย้อนกลับ</button>
+                <button type="button" class="btn btn-primary" id="hoSubmitBtn" style="flex:2;">✅ ยืนยันรับทรัพย์สิน</button>
+              </div>
+            </div>
+
+            <!-- hoSuccessBox: โชว์หลังบันทึกสำเร็จ ใช้ signatureDataUrl ที่ยังอยู่ในตัวแปร
+                 JS ตอนนั้นเลย (ยังไม่ถูกเคลียร์) พิมพ์ได้ทันทีโดยไม่ต้องโหลดรูปจาก
+                 Drive ซ้ำ — เร็วกว่าและชัวร์กว่า (ไม่ต้องพึ่ง sharing permission ของไฟล์) -->
+            <div id="hoSuccessBox" style="display:none; text-align:center; background:var(--foam); border-radius:10px; padding:20px 16px;">
+              <div style="font-size:28px; margin-bottom:6px;">✅</div>
+              <div style="font-weight:700; font-size:15px; margin-bottom:4px;">บันทึกใบเซ็นรับเรียบร้อย</div>
+              <div style="color:var(--muted); font-size:13px; margin-bottom:16px;">เลขที่ใบ <strong id="hoSuccessReceiptId"></strong></div>
+              <button type="button" class="btn btn-primary" id="hoPrintReceiptBtn" style="width:100%; margin-bottom:8px;">🖨️ พิมพ์ / ดูใบเซ็นรับ (A4)</button>
+              <button type="button" class="btn btn-secondary" id="hoNewFormBtn" style="width:100%;">➕ เริ่มใบใหม่</button>
             </div>
           </div>
 
@@ -2384,20 +2402,37 @@
   }
 
   // ใช้ร่วมกันทั้งประวัติทรัพย์สินและประวัติวัสดุ (โครงหน้าตาเดียวกัน ต่างแค่ข้อความ)
+  //
+  // ทำไมต้องตรวจจับคำว่า "เซ็นรับตามใบ HO-xxxxxx" ในนี้: assignAsset() (Assets.gs)
+  // ฝากข้อความนี้ไว้ใน Detail ของประวัติทรัพย์สินอยู่แล้วทุกครั้งที่มอบผ่านฟอร์ม
+  // เซ็นรับ ไม่ต้องเพิ่มคอลัมน์ใหม่ในชีต แค่ใช้ regex จับเลขที่ใบจากข้อความเดิม
+  // แล้วเปลี่ยนเป็นปุ่มเปิดดู/พิมพ์ใบนั้นได้เลย จากหน้าประวัติของทรัพย์สินชิ้นนั้น
+  const HO_RECEIPT_REF_RE = /เซ็นรับตามใบ\s+(HO-\d+)/;
+
   function renderHistoryItems_(items, titleFn, detailFn) {
     if (!items || !items.length) {
       return '<div style="color:var(--muted);font-size:13px;padding:4px 0;">ยังไม่มีประวัติ</div>';
     }
-    return items.map(h => `
-      <div class="history-item">
-        <div class="history-time">${h.Timestamp}</div>
-        <div class="history-body">
-          <div class="history-status">${titleFn(h)}</div>
-          ${detailFn(h) ? `<div class="history-comment">${escapeHtml(detailFn(h))}</div>` : ''}
-          ${h.Changed_By ? `<div class="history-by">โดย: ${escapeHtml(h.Changed_By)}</div>` : ''}
+    return items.map(h => {
+      const detailText = detailFn(h) || '';
+      const receiptMatch = detailText.match(HO_RECEIPT_REF_RE);
+      const receiptBtn = receiptMatch
+        ? `<button type="button" class="view-ho-receipt-btn" data-receipt-id="${escapeHtml(receiptMatch[1])}"
+             style="margin-top:4px; font-size:12px; background:none; border:none; color:var(--accent, #0F3B57); text-decoration:underline; padding:0; cursor:pointer;">
+             📄 ดู/พิมพ์ใบเซ็นรับ ${escapeHtml(receiptMatch[1])}</button>`
+        : '';
+      return `
+        <div class="history-item">
+          <div class="history-time">${h.Timestamp}</div>
+          <div class="history-body">
+            <div class="history-status">${titleFn(h)}</div>
+            ${detailText ? `<div class="history-comment">${escapeHtml(detailText)}</div>` : ''}
+            ${h.Changed_By ? `<div class="history-by">โดย: ${escapeHtml(h.Changed_By)}</div>` : ''}
+            ${receiptBtn}
+          </div>
         </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   }
 
   document.getElementById('addAssetBtn').addEventListener('click', () => openAssetFormModal(null));
@@ -2950,6 +2985,8 @@
   let hoSigCtx = null;
   let hoSigDrawing = false;
   let hoSigHasStroke = false;  // true ทันทีที่ลากเส้นแรก ใช้เช็คก่อนบันทึกว่าเซ็นแล้วจริง
+  let hoLastSavedReceipt = null; // เก็บข้อมูลใบล่าสุดที่เพิ่งบันทึกสำเร็จ (รวม signature
+                                  // แบบ dataURL ตรงๆ) ไว้ให้ปุ่ม "พิมพ์/ดูใบเซ็นรับ" ใช้ทันที
 
   function showHoStep(step) {
     [1, 2, 3].forEach(n => {
@@ -3108,23 +3145,42 @@
     const signatureDataUrl = getHoSignatureDataUrl();
     if (!signatureDataUrl) { showToast('กรุณาเซ็นชื่อยืนยันก่อนบันทึก'); return; }
 
+    // เก็บข้อมูลฟอร์มไว้ในตัวแปรก่อนยิง API เพราะถ้าบันทึกสำเร็จ เราจะโชว์
+    // ปุ่มพิมพ์ทันที (ไม่เคลียร์ฟอร์ม) ต้องใช้ค่าชุดนี้สร้างเอกสารพิมพ์
+    const formSnapshot = {
+      receiverName: document.getElementById('hoReceiverName').value.trim(),
+      position: document.getElementById('hoPosition').value.trim(),
+      department: document.getElementById('hoDepartment').value.trim(),
+      dateHandover: document.getElementById('hoDate').value,
+      notes: document.getElementById('hoNotes').value.trim(),
+      items: hoSelectedAssets.map(a => ({ Asset_ID: a.Asset_ID, Name: a.Name })),
+      issuedBy: 'ณัฐพงศ์',
+      signatureDataUrl: signatureDataUrl
+    };
+
     const btn = document.getElementById('hoSubmitBtn');
     btn.disabled = true;
     btn.textContent = 'กำลังบันทึก...';
     try {
       const result = await apiPost('saveAssetHandover', {
-        receiverName: document.getElementById('hoReceiverName').value.trim(),
-        position: document.getElementById('hoPosition').value.trim(),
-        department: document.getElementById('hoDepartment').value.trim(),
-        dateHandover: document.getElementById('hoDate').value,
-        notes: document.getElementById('hoNotes').value.trim(),
-        assetIds: hoSelectedAssets.map(a => a.Asset_ID),
+        receiverName: formSnapshot.receiverName,
+        position: formSnapshot.position,
+        department: formSnapshot.department,
+        dateHandover: formSnapshot.dateHandover,
+        notes: formSnapshot.notes,
+        assetIds: formSnapshot.items.map(a => a.Asset_ID),
         signatureBase64: signatureDataUrl.split(',')[1],
         signatureMimeType: 'image/png',
-        issuedBy: 'ณัฐพงศ์'
+        issuedBy: formSnapshot.issuedBy
       });
       showToast(result.message);
-      resetHandoverForm();
+
+      // แสดงหน้า "บันทึกสำเร็จ" พร้อมปุ่มพิมพ์ แทนการเคลียร์ฟอร์มทันที
+      hoLastSavedReceipt = { ...formSnapshot, receiptId: result.receiptId };
+      document.getElementById('hoStep3FormArea').style.display = 'none';
+      document.getElementById('hoSuccessReceiptId').textContent = result.receiptId || '-';
+      document.getElementById('hoSuccessBox').style.display = '';
+
       await Promise.all([loadAssets(), loadAssetHandovers()]);
     } catch (err) {
       showToast('บันทึกไม่สำเร็จ: ' + err.message);
@@ -3134,6 +3190,12 @@
     }
   });
 
+  document.getElementById('hoPrintReceiptBtn').addEventListener('click', () => {
+    if (!hoLastSavedReceipt) return;
+    printAssetHandoverReceipt_(hoLastSavedReceipt);
+  });
+  document.getElementById('hoNewFormBtn').addEventListener('click', resetHandoverForm);
+
   function resetHandoverForm() {
     document.getElementById('hoReceiverName').value = '';
     document.getElementById('hoPosition').value = '';
@@ -3141,10 +3203,13 @@
     document.getElementById('hoDate').value = new Date().toISOString().split('T')[0];
     document.getElementById('hoNotes').value = '';
     hoSelectedAssets = [];
+    hoLastSavedReceipt = null;
     document.getElementById('hoAssetSearchInput').value = '';
     renderHoAssetSearchResults();
     renderHoSelectedList();
     clearHoSignature();
+    document.getElementById('hoStep3FormArea').style.display = '';
+    document.getElementById('hoSuccessBox').style.display = 'none';
     showHoStep(1);
   }
 
@@ -3164,11 +3229,168 @@
             <span style="color:var(--muted);">${escapeHtml(r.Date_Handover)}</span>
           </div>
           <div style="color:var(--muted); margin:2px 0;">${escapeHtml(r.Department || '-')} · ${r.Item_Count} ชิ้น · เลขที่ใบ ${escapeHtml(r.Receipt_ID)}</div>
-          <div style="font-size:12.5px; color:var(--muted); margin-bottom:4px;">${escapeHtml(r.Asset_IDs)}</div>
-          ${r.Signature_URL ? `<a href="${r.Signature_URL}" target="_blank" rel="noopener" style="font-size:12.5px;">🖊️ ดูลายเซ็น</a>` : ''}
+          <div style="font-size:12.5px; color:var(--muted); margin-bottom:6px;">${escapeHtml(r.Asset_IDs)}</div>
+          <div style="display:flex; gap:14px; align-items:center;">
+            ${r.Signature_URL ? `<a href="${r.Signature_URL}" target="_blank" rel="noopener" style="font-size:12.5px;">🖊️ ดูลายเซ็น</a>` : ''}
+            <button type="button" class="view-ho-receipt-btn" data-receipt-id="${escapeHtml(r.Receipt_ID)}"
+              style="font-size:12.5px; background:none; border:none; color:var(--accent, #0F3B57); text-decoration:underline; padding:0; cursor:pointer;">🖨️ ดู/พิมพ์ใบเซ็นรับ (A4)</button>
+          </div>
         </div>
       `).join('')
       : '<div class="empty-state">ยังไม่มีใบเซ็นรับ</div>';
+  }
+
+  // ทำไมใช้ event delegation ตัวเดียวผูกกับ document แทนการผูก listener ทุกครั้งที่
+  // render ปุ่มใหม่: ปุ่ม "ดู/พิมพ์ใบเซ็นรับ" โผล่ได้หลายที่ (ประวัติใบเซ็นรับล่าสุด,
+  // ประวัติของทรัพย์สินแต่ละชิ้น) และถูก re-render บ่อยเวลาข้อมูลรีเฟรช ถ้าผูก
+  // listener ทีละปุ่มจะเสี่ยงลืมผูกซ้ำตอน innerHTML ถูกเขียนทับใหม่
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.view-ho-receipt-btn');
+    if (!btn) return;
+    viewHandoverReceiptByReceiptId_(btn.dataset.receiptId);
+  });
+
+  /**
+   * ดึงเลขไฟล์ (File ID) ออกจากลิงก์ Drive รูปแบบ .../file/d/<ID>/view เพื่อเอาไป
+   * ประกอบเป็นลิงก์รูปแบบที่ฝังใน <img src="..."> ได้ตรงๆ (ลิงก์ view ปกติของ Drive
+   * เปิดเป็นหน้าเว็บ ไม่ใช่ไฟล์รูปตรงๆ ฝังไม่ได้) ใช้ endpoint thumbnail ของ Drive
+   * ซึ่งใช้ได้เพราะไฟล์ถูกตั้งสิทธิ์ "ใครมีลิงก์ก็ดูได้" ไว้แล้วตอนอัพโหลด
+   */
+  function driveDirectImageUrl_(driveUrl) {
+    const m = String(driveUrl || '').match(/\/d\/([a-zA-Z0-9_-]+)/);
+    return m ? ('https://drive.google.com/thumbnail?id=' + m[1] + '&sz=w1000') : '';
+  }
+
+  /**
+   * เปิดดู/พิมพ์ใบเซ็นรับย้อนหลัง จากเลขที่ใบ (ใช้ตอนกดปุ่มจากประวัติใบเซ็นรับ
+   * หรือจากประวัติของทรัพย์สินแต่ละชิ้น) ต่างจาก printAssetHandoverReceipt_() ตรง
+   * ที่ต้องโหลดลายเซ็นจากลิงก์ Drive แทนการใช้ dataURL สดๆ เพราะใบที่บันทึกไปแล้ว
+   * ไม่มี dataURL ค้างอยู่ในหน่วยความจำเบราว์เซอร์อีกต่อไป
+   */
+  async function viewHandoverReceiptByReceiptId_(receiptId) {
+    let receipt = hoHandoversCache.find(r => r.Receipt_ID === receiptId);
+    if (!receipt) {
+      // เผื่อกรณีเปิดหน้านี้มาจากแท็บอื่นที่ยังไม่เคยโหลดประวัติใบเซ็นรับเลย
+      try {
+        hoHandoversCache = await apiGet('getAssetHandovers');
+        receipt = hoHandoversCache.find(r => r.Receipt_ID === receiptId);
+      } catch (e) { /* ปล่อยผ่าน จะไปเจอ toast ข้อความ "ไม่พบ" ด้านล่างแทน */ }
+    }
+    if (!receipt) { showToast('ไม่พบใบเซ็นรับเลขที่ ' + receiptId); return; }
+
+    const assetIds = String(receipt.Asset_IDs || '').split(',').map(s => s.trim()).filter(Boolean);
+    const items = assetIds.map(id => {
+      const asset = allAssetsCache.find(a => a.Asset_ID === id);
+      return { Asset_ID: id, Name: asset ? asset.Name : '(ไม่พบข้อมูลทรัพย์สินนี้แล้ว)' };
+    });
+
+    openHandoverReceiptDocument_({
+      receiptId: receipt.Receipt_ID,
+      dateHandover: receipt.Date_Handover,
+      receiverName: receipt.Receiver_Name,
+      position: receipt.Position,
+      department: receipt.Department,
+      notes: receipt.Notes,
+      issuedBy: receipt.Issued_By,
+      items: items,
+      signatureSrc: driveDirectImageUrl_(receipt.Signature_URL)
+    });
+  }
+
+  /** ใช้ทันทีหลังกดยืนยันเซ็นสำเร็จ — เร็วกว่าเพราะใช้ dataURL ที่ยังอยู่ในตัวแปร JS
+   *  ไม่ต้องรอโหลดรูปจาก Drive ซ้ำ */
+  function printAssetHandoverReceipt_(data) {
+    openHandoverReceiptDocument_({
+      receiptId: data.receiptId,
+      dateHandover: data.dateHandover,
+      receiverName: data.receiverName,
+      position: data.position,
+      department: data.department,
+      notes: data.notes,
+      issuedBy: data.issuedBy,
+      items: data.items,
+      signatureSrc: data.signatureDataUrl
+    });
+  }
+
+  /**
+   * สร้างเอกสารใบเซ็นรับขนาด A4 ในหน้าต่างใหม่ (ไม่ print หน้าเดิม ด้วยเหตุผล
+   * เดียวกับ printAssetLabel_: กัน CSS ของแอปหลักปนไปในกระดาษ)
+   *
+   * ทำไมไม่สั่ง window.print() ทันทีแบบ printAssetLabel_: ใบเซ็นรับมีเนื้อหาเยอะ
+   * กว่าป้าย QR มาก (รายการทรัพย์สินหลายชิ้น) ผู้ใช้ควรได้เห็นหน้าเอกสารก่อนว่า
+   * ถูกต้องครบถ้วนหรือไม่ ก่อนสั่งพิมพ์จริง จึงใส่ปุ่ม "พิมพ์เอกสารนี้" ไว้ในเอกสาร
+   * แทน กดเองอีกทีตอนพร้อม (คนละแบบกับป้าย QR ที่มีข้อมูลน้อย พิมพ์ผิดแก้ไขง่าย)
+   */
+  function openHandoverReceiptDocument_(opts) {
+    const w = window.open('', '_blank', 'width=860,height=1000');
+    if (!w) { showToast('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต pop-up แล้วลองใหม่'); return; }
+
+    const itemRows = (opts.items || []).map((it, idx) => `
+      <tr>
+        <td>${idx + 1}</td>
+        <td>${escapeHtml(it.Asset_ID)}</td>
+        <td>${escapeHtml(it.Name || '')}</td>
+      </tr>
+    `).join('');
+
+    const printedAt = formatDateTimeForDisplay_(new Date());
+
+    w.document.write(`
+      <html><head><title>ใบเซ็นรับทรัพย์สิน ${escapeHtml(opts.receiptId || '')}</title>
+      <style>
+        @page { size: A4; margin: 16mm 14mm; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', 'Sarabun', sans-serif; color:#0F3B57; margin:0; }
+        .toolbar { padding:12px 16px; background:#f2f6f8; border-bottom:1px solid #dbe6ea; display:flex; justify-content:flex-end; }
+        .toolbar button { padding:9px 18px; border-radius:8px; border:none; background:#0F3B57; color:#fff; font-size:14px; cursor:pointer; }
+        @media print { .toolbar { display:none; } }
+        .sheet { max-width:720px; margin:24px auto; padding:0 8px 40px; }
+        h1 { font-size:21px; margin:0 0 2px; }
+        .sub { color:#5b7684; font-size:13px; margin-bottom:20px; }
+        table.meta { width:100%; border-collapse:collapse; font-size:14px; margin-bottom:18px; }
+        table.meta td { padding:4px 0; vertical-align:top; }
+        table.meta td.label { width:130px; color:#5b7684; white-space:nowrap; }
+        table.items { width:100%; border-collapse:collapse; font-size:13.5px; margin-bottom:28px; }
+        table.items th, table.items td { border:1px solid #cdd9de; padding:6px 8px; text-align:left; }
+        table.items th { background:#eef4f6; }
+        .sign-box { text-align:left; margin-top:12px; }
+        .sign-box img { max-width:240px; max-height:110px; display:block; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
+        .sign-placeholder { height:90px; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
+        .footer-note { margin-top:30px; font-size:11px; color:#8fa3ab; }
+      </style></head>
+      <body>
+        <div class="toolbar"><button onclick="window.print()">🖨️ พิมพ์เอกสารนี้</button></div>
+        <div class="sheet">
+          <h1>ใบเซ็นรับทรัพย์สิน</h1>
+          <div class="sub">Sandsea Resort · IT Department · เลขที่ใบ ${escapeHtml(opts.receiptId || '')}</div>
+          <table class="meta">
+            <tr><td class="label">ผู้รับ</td><td>${escapeHtml(opts.receiverName || '')}${opts.position ? ' (' + escapeHtml(opts.position) + ')' : ''}</td></tr>
+            ${opts.department ? `<tr><td class="label">แผนก</td><td>${escapeHtml(opts.department)}</td></tr>` : ''}
+            <tr><td class="label">วันที่รับ</td><td>${escapeHtml(opts.dateHandover || '')}</td></tr>
+            ${opts.notes ? `<tr><td class="label">หมายเหตุ</td><td>${escapeHtml(opts.notes)}</td></tr>` : ''}
+            <tr><td class="label">ผู้ออกเอกสาร</td><td>${escapeHtml(opts.issuedBy || '-')}</td></tr>
+          </table>
+          <table class="items">
+            <thead><tr><th style="width:32px;">#</th><th style="width:140px;">รหัสทรัพย์สิน</th><th>รายการ</th></tr></thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+          <div class="sign-box">
+            ${opts.signatureSrc ? `<img src="${opts.signatureSrc}" alt="ลายเซ็น">` : `<div class="sign-placeholder"></div>`}
+            ลายเซ็นผู้รับ: ${escapeHtml(opts.receiverName || '')}
+          </div>
+          <div class="footer-note">พิมพ์จากระบบ Sandsea IT เมื่อ ${escapeHtml(printedAt)}</div>
+        </div>
+      </body></html>
+    `);
+    w.document.close();
+  }
+
+  /** จัดรูปแบบวันที่-เวลาแบบไทยง่ายๆ สำหรับพิมพ์ท้ายเอกสาร (ไม่ใช้ formatDate/
+   *  formatDateTime ฝั่ง server เพราะอันนั้นทำงานบน Apps Script เท่านั้น) */
+  function formatDateTimeForDisplay_(d) {
+    return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' }) +
+      ' ' + d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
   }
 
   // ===================================================================
