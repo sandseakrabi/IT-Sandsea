@@ -614,6 +614,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <!-- ใช้สร้าง QR Code ติดทรัพย์สิน IT แต่ละชิ้น (แท็บ "ทรัพย์สิน") โหลดจาก CDN เช่นกัน -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- ใช้อ่าน/สแกน QR Code ผ่านกล้องมือถือ (แท็บ "ฟอร์มรับทรัพย์สิน" / "ฟอร์มส่งคืนทรัพย์สิน")
+     โหลดจาก CDN เช่นเดียวกับ qrcodejs ด้านบน — ตัวนี้ "อ่าน" QR ส่วน qrcodejs ด้านบน "สร้าง" QR -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
 
@@ -976,8 +979,10 @@
           <div class="card" id="hoStep2" style="display:none;">
             <h3>ขั้นตอน 2 จาก 3 — เลือกทรัพย์สินที่จะมอบ</h3>
             <div style="background:#E3F0F7; color:#0F3B57; border:1px solid #bcdcff; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.6;">
-              พิมพ์ค้นหาแล้วกด "+ เพิ่ม" ทีละชิ้น เลือกได้ไม่จำกัดจำนวน
+              สแกน QR บนตัวเครื่อง หรือพิมพ์ค้นหาแล้วกด "+ เพิ่ม" — เพิ่มได้ทีละหลายชิ้นต่อเนื่องกัน
             </div>
+            <button type="button" class="btn btn-primary" id="hoScanBtn" style="width:100%; margin-bottom:10px;">📷 สแกน QR เพิ่มทรัพย์สิน</button>
+            <div style="text-align:center; color:var(--muted); font-size:12.5px; margin:4px 0 10px;">หรือค้นหาด้วยรหัส/ชื่อ</div>
             <input type="text" id="hoAssetSearchInput" placeholder="ค้นหารหัส / ชื่อ / Serial" autocomplete="off"
               style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px; margin-bottom:8px;">
             <div id="hoAssetSearchResults" style="max-height:260px; overflow-y:auto; margin-bottom:16px;"></div>
@@ -1032,41 +1037,53 @@
 
         <!-- ===================================================================
              แท็บ "ฟอร์มส่งคืนทรัพย์สิน" — ใบรับคืนตอนพนักงานส่งของกลับ คู่กับ
-             แท็บ "ฟอร์มรับทรัพย์สิน" ด้านบน โครง 3 ขั้นตอนเดียวกันทุกประการ
-             (ข้อมูลผู้คืน -> เลือกทรัพย์สิน -> เซ็นชื่อยืนยัน) ต่างกันตรงขั้นตอน
-             ที่ 2: ต้องเลือก "สถานะการคืน" แยกเป็นรายชิ้นด้วย (ครบ/ไม่ครบ/เสียหาย)
-             เพราะใบเดียวอาจมีของหลายชิ้นสภาพไม่เหมือนกัน เช่น Notebook คืนมา
-             สภาพดี แต่ Monitor จอแตก เลือกแยกกันได้ต่อรหัสทรัพย์สิน แล้วบันทึก
-             ผลลงประวัติของทรัพย์สินชิ้นนั้นๆ (ดู saveAssetReturn() ใน Assets.gs)
+             แท็บ "ฟอร์มรับทรัพย์สิน" ด้านบน โครง 3 ขั้นตอนในหน้าเดียวเหมือนกัน
+             แต่ "สลับลำดับ" กับฟอร์มรับ: ฟอร์มรับเริ่มจากกรอกข้อมูลผู้รับก่อน
+             เพราะยังไม่มีข้อมูลอะไรในระบบเลย ส่วนฟอร์มคืนเริ่มจาก "สแกน QR" แทน
+             เพราะทรัพย์สินที่จะคืนมีข้อมูล "ผู้ถือครองปัจจุบัน" อยู่แล้วในระบบ
+             (มาจากตอนเซ็นรับ) ให้สแกนก่อนแล้วระบบเติมชื่อ/ตำแหน่ง/แผนกผู้คืนให้
+             อัตโนมัติ ไม่ต้องพิมพ์ซ้ำ (ดู prefillRtReturnerInfo_ ด้านล่าง) —
+             ขั้นตอนที่ 2 ยังต้องเลือก "สถานะการคืน" แยกเป็นรายชิ้นเหมือนเดิม
+             (ครบ/ไม่ครบ/เสียหาย) เพราะใบเดียวอาจมีของหลายชิ้นสภาพไม่เหมือนกัน
+             เช่น Notebook คืนมาสภาพดี แต่ Monitor จอแตก แล้วบันทึกผลลงประวัติ
+             ของทรัพย์สินชิ้นนั้นๆ (ดู saveAssetReturn() ใน Assets.gs)
              =================================================================== -->
         <div class="panel" id="panel-return">
 
-          <!-- ขั้นตอน 1: ข้อมูลผู้คืน -->
+          <!-- ขั้นตอน 1: สแกน QR ทรัพย์สินที่จะคืน (สแกนต่อได้หลายชิ้น) -->
           <div class="card" id="rtStep1">
-            <h3>ขั้นตอน 1 จาก 3 — ข้อมูลผู้คืน</h3>
+            <h3>ขั้นตอน 1 จาก 3 — สแกน QR ทรัพย์สินที่จะคืน</h3>
+            <div style="background:#E3F0F7; color:#0F3B57; border:1px solid #bcdcff; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.6;">
+              สแกน QR บนตัวเครื่องที่จะคืน ระบบจะดึงชื่อผู้ถือครองปัจจุบันมาเติมข้อมูลผู้คืนให้อัตโนมัติในขั้นตอนถัดไป — สแกนต่อได้เรื่อยๆ ถ้ามีหลายชิ้น
+            </div>
+            <button type="button" class="btn btn-primary" id="rtScanBtn" style="width:100%; margin-bottom:10px;">📷 สแกน QR เพิ่มทรัพย์สินที่จะคืน</button>
+            <div style="text-align:center; color:var(--muted); font-size:12.5px; margin:4px 0 10px;">หรือค้นหาด้วยรหัส/ชื่อ</div>
+            <input type="text" id="rtAssetSearchInput" placeholder="ค้นหารหัส / ชื่อ / Serial" autocomplete="off"
+              style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px; margin-bottom:8px;">
+            <div id="rtAssetSearchResults" style="max-height:220px; overflow-y:auto; margin-bottom:16px;"></div>
+
+            <h4 style="margin:0 0 8px;">รายการที่จะคืน (<span id="rtScanCount">0</span> ชิ้น)</h4>
+            <div id="rtScanSelectedList" style="margin-bottom:16px;"></div>
+
+            <button type="button" class="btn btn-primary" style="width:100%;" id="rtStep1NextBtn">ถัดไป: ข้อมูลผู้คืน →</button>
+          </div>
+
+          <!-- ขั้นตอน 2: ยืนยัน/แก้ไขข้อมูลผู้คืน (เติมอัตโนมัติจากขั้นตอน 1 ถ้ามี)
+               + เลือกสถานะการคืนของแต่ละชิ้น -->
+          <div class="card" id="rtStep2" style="display:none;">
+            <h3>ขั้นตอน 2 จาก 3 — ยืนยันข้อมูลผู้คืน + สถานะการคืน</h3>
+            <div style="background:#E3F0F7; color:#0F3B57; border:1px solid #bcdcff; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.6;">
+              ระบบเติมชื่อผู้คืนให้จากผู้ถือครองปัจจุบันของชิ้นที่สแกนแล้ว ตรวจสอบ/แก้ไขได้ก่อนไปต่อ แล้วเลือก "สถานะการคืน" ของ<strong>แต่ละชิ้น</strong>ด้านล่าง
+            </div>
             <div class="field"><label>ชื่อ-สกุลผู้คืน *</label><input type="text" id="rtReturnerName" placeholder="ชื่อพนักงานผู้คืนของ"></div>
             <div class="field"><label>ตำแหน่ง</label><input type="text" id="rtPosition" placeholder="เช่น พนักงานต้อนรับ, บัญชี"></div>
             <div class="field"><label>แผนก</label><input type="text" id="rtDepartment" placeholder="เช่น ต้อนรับ, แม่บ้าน, ครัว, บัญชี"></div>
             <div class="field"><label>วันที่คืน</label><input type="date" id="rtDate"></div>
             <div class="field"><label>หมายเหตุ (ทั้งใบ)</label><textarea id="rtNotes" placeholder="ถ้ามี (ไม่บังคับ)"></textarea></div>
-            <button type="button" class="btn btn-primary" style="width:100%;" id="rtStep1NextBtn">ถัดไป: เลือกทรัพย์สิน →</button>
-          </div>
 
-          <!-- ขั้นตอน 2: เลือกทรัพย์สินที่จะคืน + เลือกสถานะแต่ละชิ้นทันที -->
-          <div class="card" id="rtStep2" style="display:none;">
-            <h3>ขั้นตอน 2 จาก 3 — เลือกทรัพย์สินที่จะคืน</h3>
-            <div style="background:#E3F0F7; color:#0F3B57; border:1px solid #bcdcff; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px; line-height:1.6;">
-              เพิ่มทรัพย์สินแล้วเลือก "สถานะการคืน" ของ<strong>แต่ละชิ้น</strong>ด้านล่าง — ถ้าของหลายชิ้นในใบเดียวสภาพไม่เหมือนกัน เลือกแยกต่อชิ้นได้เลย
-            </div>
-
-            <!-- แสดงรายการที่ผู้คืนถือครองอยู่ตอนนี้ (กรองจาก allAssetsCache ด้วย
-                 Assigned_To) ให้กด "+ เพิ่ม" ได้เลยโดยไม่ต้องพิมพ์ค้นหา เร็วกว่า
-                 เวลาคืนของหลายชิ้นพร้อมกัน -->
+            <!-- แสดงทรัพย์สินอื่นที่ชื่อนี้ถือครองอยู่ (กรองจาก allAssetsCache ด้วย
+                 Assigned_To) เผื่อลืมสแกนบางชิ้นในขั้นตอนที่ 1 กด "+ เพิ่ม" ได้เลย -->
             <div id="rtHeldByBox" style="margin-bottom:12px;"></div>
-
-            <input type="text" id="rtAssetSearchInput" placeholder="ค้นหารหัส / ชื่อ / Serial" autocomplete="off"
-              style="width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:9px; font-size:14px; margin-bottom:8px;">
-            <div id="rtAssetSearchResults" style="max-height:220px; overflow-y:auto; margin-bottom:16px;"></div>
 
             <h4 style="margin:0 0 8px;">รายการที่จะคืน (<span id="rtSelectedCount">0</span> ชิ้น)</h4>
             <div id="rtSelectedList" style="margin-bottom:16px;"></div>
@@ -2200,12 +2217,135 @@
     genericModal.classList.add('show');
   }
   function closeModal() {
+    stopActiveQrScanner_(); // ถ้า modal ที่เปิดอยู่คือตัวสแกน QR ต้องปิดกล้องก่อนเสมอ ไม่งั้นกล้องค้างเปิดต่อ
     genericModal.classList.remove('show');
     modalBodyEl.innerHTML = ''; // เคลียร์เนื้อหาทิ้ง กัน id ซ้ำชนกันตอนเปิดฟอร์มใหม่รอบถัดไป
   }
   document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
   // กดพื้นที่มืดรอบนอกกล่อง (ไม่ใช่ตัวกล่องเอง) ก็ปิดได้เหมือนกัน สะดวกบนมือถือ
   genericModal.addEventListener('click', (e) => { if (e.target === genericModal) closeModal(); });
+
+  // ===================================================================
+  // ส่วนที่ 11.5: ตัวสแกน QR ทรัพย์สิน (ใช้ร่วมกัน — ฟอร์มรับ + ฟอร์มส่งคืน)
+  // -------------------------------------------------------------------
+  // ระบบเดิมมี QR Code ต่อทรัพย์สินอยู่แล้ว (สร้างด้วย openAssetQrModal เข้ารหัส
+  // เป็นลิงก์ ?asset=รหัส) แต่ใช้ได้แค่ "แปะสติกเกอร์แล้วเปิดกล้องมือถือทั่วไป
+  // สแกนแยก" เท่านั้น ตัวนี้เพิ่มความสามารถ "สแกนในแอปได้เลย" โดยเปิดกล้องผ่าน
+  // ไลบรารี html5-qrcode ต่อเนื่องหลายชิ้นในหน้าต่างเดียว (ไม่ต้องปิด-เปิดใหม่
+  // ทุกครั้งที่จะเพิ่มชิ้นถัดไป) ใช้ modal กลาง (openModal/closeModal) เดิม แต่
+  // ต้องคุมเรื่อง "ปิดกล้องให้ถูกจังหวะ" เป็นพิเศษ (ดู stopActiveQrScanner_
+  // ที่ผูกไว้ใน closeModal ด้านบน) ไม่งั้นไฟกล้องจะค้างติดหลังปิด modal
+  // ===================================================================
+  let activeQrScanner_ = null; // instance ของ Html5Qrcode ที่กำลังเปิดกล้องอยู่ (ถ้ามี)
+
+  function stopActiveQrScanner_() {
+    if (!activeQrScanner_) return;
+    const scanner = activeQrScanner_;
+    activeQrScanner_ = null;
+    // .stop() คืน Promise แต่ปิด modal ต้องทำทันทีไม่ต้องรอ ปล่อยให้กล้องปิดเบื้องหลัง
+    // (best-effort — ถ้า error เช่นกล้องหลุดไปแล้วก่อนหน้า ก็ไม่เป็นไร เพิกเฉยได้)
+    scanner.stop().then(() => scanner.clear()).catch(() => {});
+  }
+
+  /**
+   * ถอดรหัส Asset_ID จากข้อความที่สแกนได้จาก QR: รองรับทั้งลิงก์เต็ม (รูปแบบ
+   * ปัจจุบันจาก openAssetQrModal คือ "…?asset=IT-NB-0001") และรหัสดิบล้วนๆ
+   * (เผื่ออนาคตเปลี่ยนไปพิมพ์ QR เป็นรหัสตรงๆ หรือกรอกเองในช่องสำรอง)
+   */
+  function extractAssetIdFromQrText_(text) {
+    const raw = String(text || '').trim();
+    try {
+      const url = new URL(raw);
+      const fromQuery = url.searchParams.get('asset');
+      if (fromQuery) return fromQuery;
+    } catch (e) { /* ไม่ใช่ลิงก์ ก็ถือว่าเป็นรหัสดิบ ใช้ต่อได้เลย */ }
+    return raw;
+  }
+
+  /**
+   * เปิด modal สแกน QR ทรัพย์สินแบบสแกนต่อเนื่องหลายชิ้น ใช้ทั้งฟอร์มรับและ
+   * ฟอร์มส่งคืน (ตรรกะ "เพิ่มชิ้นนี้ได้ไหม/เพิ่มยังไง" ต่างกันไปตามฟอร์ม จึงส่ง
+   * เป็น callback opts.onDecode มาจากผู้เรียกแทนที่จะฝังตรรกะไว้ในนี้)
+   *
+   * ทำไมใช้ Html5Qrcode (API ระดับล่าง) แทน Html5QrcodeScanner (มี UI สำเร็จรูป
+   * ของไลบรารีเอง): ต้องคุมหน้าตาเอง (โชว์ผลสแกนล่าสุด, มีช่องพิมพ์รหัสเองสำรอง
+   * เผื่อกล้องเปิดไม่ได้/ QR ชำรุด) ให้เข้ากับดีไซน์ modal เดิมของระบบ
+   *
+   * opts.title, opts.hint: ข้อความหัวข้อ/คำอธิบายสั้นๆในกล่อง
+   * opts.onDecode(assetId): เรียกทุกครั้งที่สแกน/พิมพ์รหัสสำเร็จ 1 ครั้ง ต้อง
+   *   คืนค่า { ok: boolean, message: string } กลับมาให้โชว์เป็น feedback
+   * opts.doneLabel: ข้อความปุ่มปิด (default "เสร็จสิ้น")
+   */
+  function openAssetScannerModal_(opts) {
+    openModal(opts.title || 'สแกน QR ทรัพย์สิน', `
+      <div style="margin-bottom:10px; font-size:13px; color:var(--muted); line-height:1.6;">
+        ${opts.hint || 'เล็งกล้องไปที่ QR Code บนตัวทรัพย์สิน สแกนต่อเนื่องได้หลายชิ้น'}
+      </div>
+      <div id="qrScanFeedback" style="min-height:20px; margin-bottom:8px; font-size:13px; font-weight:600; color:var(--accent, #0F3B57);"></div>
+      <div id="qrScanReader" style="width:100%; border-radius:10px; overflow:hidden; background:#000; margin-bottom:10px;"></div>
+      <div id="qrScanError" style="display:none; background:#FFF3E0; color:#8a5a00; border:1px solid #ffdca8; border-radius:8px; padding:10px 12px; font-size:12.5px; margin-bottom:10px;"></div>
+      <div style="display:flex; gap:6px; margin-bottom:6px;">
+        <input type="text" id="qrManualInput" placeholder="หรือพิมพ์รหัสทรัพย์สินเอง เช่น IT-NB-0001" autocomplete="off"
+          style="flex:1; padding:9px 10px; border:1px solid var(--border); border-radius:8px; font-size:13.5px;">
+        <button type="button" class="btn btn-secondary" id="qrManualBtn">+ เพิ่ม</button>
+      </div>
+      <button type="button" class="btn btn-primary" style="width:100%; margin-top:8px;" id="qrScanDoneBtn">${opts.doneLabel || '✅ เสร็จสิ้น'}</button>
+    `);
+
+    const feedbackEl = document.getElementById('qrScanFeedback');
+    const errorEl = document.getElementById('qrScanError');
+
+    document.getElementById('qrScanDoneBtn').addEventListener('click', () => {
+      closeModal();
+      if (opts.onClose) opts.onClose();
+    });
+
+    document.getElementById('qrManualBtn').addEventListener('click', () => {
+      const input = document.getElementById('qrManualInput');
+      const val = input.value.trim();
+      if (!val) return;
+      input.value = '';
+      handleQrScanResult_(val);
+    });
+    document.getElementById('qrManualInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('qrManualBtn').click();
+    });
+
+    // กันสแกนรัวๆซ้ำรหัสเดิมภายในเวลาสั้นๆ (กล้องยังเห็น QR เดิมค้างอยู่ในเฟรม
+    // ระหว่างขยับไปชิ้นถัดไป ถ้าไม่กันไว้ onDecode จะถูกยิงซ้ำรัวๆ)
+    let lastText = '';
+    let lastAt = 0;
+    function handleQrScanResult_(rawText) {
+      const now = Date.now();
+      if (rawText === lastText && (now - lastAt) < 1500) return;
+      lastText = rawText;
+      lastAt = now;
+
+      const assetId = extractAssetIdFromQrText_(rawText);
+      const result = opts.onDecode(assetId) || {};
+      feedbackEl.textContent = result.message || '';
+      feedbackEl.style.color = result.ok === false ? '#b3261e' : 'var(--accent, #0F3B57)';
+      if (navigator.vibrate) navigator.vibrate(result.ok === false ? [80, 60, 80] : 40);
+    }
+
+    if (typeof Html5Qrcode === 'undefined') {
+      errorEl.style.display = 'block';
+      errorEl.textContent = 'ไม่พบไลบรารีกล้องสแกน (โหลดจากอินเทอร์เน็ตไม่สำเร็จ) กรุณาพิมพ์รหัสทรัพย์สินด้านล่างแทน';
+      return;
+    }
+
+    const scanner = new Html5Qrcode('qrScanReader');
+    activeQrScanner_ = scanner;
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 240, height: 240 } },
+      (decodedText) => handleQrScanResult_(decodedText),
+      () => {} // เรียกทุกเฟรมที่ยังหา QR ไม่เจอ (ปกติมาก ไม่ต้องแจ้งเตือน)
+    ).catch(() => {
+      errorEl.style.display = 'block';
+      errorEl.textContent = 'เปิดกล้องไม่สำเร็จ (อาจไม่ได้อนุญาตสิทธิ์กล้อง หรืออุปกรณ์ไม่มีกล้อง) กรุณาพิมพ์รหัสทรัพย์สินด้านล่างแทน';
+    });
+  }
 
   // ===================================================================
   // ส่วนที่ 12: หน้า IT — ทรัพย์สิน IT (Assets)
@@ -3145,14 +3285,34 @@
     });
   }
 
+  /**
+   * เพิ่มทรัพย์สิน 1 ชิ้นเข้ารายการที่จะมอบ ใช้ร่วมกันทั้งปุ่ม "+ เพิ่ม" จากผล
+   * ค้นหา และตอนสแกน QR สำเร็จ (ดู hoScanBtn ด้านล่าง) จึงคืนค่า {ok, message}
+   * กลับไปเสมอ เพื่อให้ตัวสแกนเอาไปโชว์เป็น feedback ได้ทันที ส่วนปุ่ม "+ เพิ่ม"
+   * เดิมไม่ได้ใช้ค่าที่คืนมา (ไม่กระทบพฤติกรรมเดิม)
+   */
   function addHoAsset(assetId) {
     const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
-    if (!asset || hoSelectedAssets.some(a => a.Asset_ID === assetId)) return;
+    if (!asset) return { ok: false, message: '❌ ไม่พบรหัสทรัพย์สิน ' + assetId };
+    if (hoSelectedAssets.some(a => a.Asset_ID === assetId)) {
+      return { ok: true, message: 'มีอยู่แล้วในรายการ: ' + assetId };
+    }
     hoSelectedAssets.push(asset);
     document.getElementById('hoAssetSearchInput').value = '';
     renderHoAssetSearchResults();
     renderHoSelectedList();
+    return { ok: true, message: '✅ เพิ่ม ' + assetId + ' — ' + asset.Name };
   }
+
+  // สแกน QR เพื่อเพิ่มทรัพย์สิน — สแกนต่อเนื่องได้หลายชิ้น (ชิ้นที่ 2, 3, 4, ...)
+  // โดยไม่ต้องปิด-เปิดตัวสแกนใหม่ทุกครั้ง กด "เสร็จสิ้น" ตอนครบแล้วค่อยปิด
+  document.getElementById('hoScanBtn').addEventListener('click', () => {
+    openAssetScannerModal_({
+      title: 'สแกน QR เพิ่มทรัพย์สิน',
+      hint: 'เล็งกล้องไปที่ QR บนตัวเครื่อง เพิ่มได้ทีละหลายชิ้นต่อเนื่องกัน แล้วกด "เสร็จสิ้น" เมื่อครบ',
+      onDecode: (assetId) => addHoAsset(assetId)
+    });
+  });
 
   function removeHoAsset(assetId) {
     hoSelectedAssets = hoSelectedAssets.filter(a => a.Asset_ID !== assetId);
@@ -3542,13 +3702,19 @@
   // ===================================================================
   // ส่วนที่ 12.8: หน้า IT — ฟอร์มส่งคืนทรัพย์สิน (ใบส่งคืน)
   // -------------------------------------------------------------------
-  // โครงเดียวกับ "ฟอร์มรับทรัพย์สิน" (ส่วนที่ 12.7) ทุกประการ 3 ขั้นตอนในหน้า
-  // เดียว ต่างกันตรงขั้นตอนที่ 2 ต้องเลือก "สถานะการคืน" ต่อรายชิ้นด้วย (ครบ/
-  // ไม่ครบ/เสียหาย) — กดยืนยันแล้วเรียก saveAssetReturn() ฝั่ง server ซึ่งจะไป
-  // อัพเดทสถานะทรัพย์สินแต่ละชิ้นตามที่เลือกไว้ให้อัตโนมัติ (ดู Assets.gs)
+  // โครงเดียวกับ "ฟอร์มรับทรัพย์สิน" (ส่วนที่ 12.7) 3 ขั้นตอนในหน้าเดียว แต่
+  // "สลับลำดับ" กัน: ฟอร์มรับเริ่มจากกรอกข้อมูลผู้รับก่อน (ยังไม่มีข้อมูลอะไร
+  // ในระบบเลย) ส่วนฟอร์มคืนเริ่มจาก "สแกน QR ทรัพย์สิน" ก่อน (ขั้นตอนที่ 1)
+  // แล้วค่อยไปยืนยัน/แก้ไขข้อมูลผู้คืน (ขั้นตอนที่ 2) เพราะทรัพย์สินแต่ละชิ้น
+  // มีข้อมูล "ผู้ถือครองปัจจุบัน" (Assigned_To) อยู่แล้วในระบบตั้งแต่ตอนเซ็นรับ
+  // — คนคืนคือคนเดิมที่เคยเซ็นรับไป ไม่ต้องให้พิมพ์ชื่อ/ตำแหน่ง/แผนกซ้ำอีกรอบ
+  // (ดู prefillRtReturnerInfo_) ขั้นตอนที่ 2 ยังต้องเลือก "สถานะการคืน" ต่อ
+  // รายชิ้นด้วย (ครบ/ไม่ครบ/เสียหาย) — กดยืนยันแล้วเรียก saveAssetReturn()
+  // ฝั่ง server ซึ่งจะไปอัพเดทสถานะทรัพย์สินแต่ละชิ้นให้อัตโนมัติ (ดู Assets.gs)
   // ===================================================================
   const RT_STATUS_OPTIONS = ['ครบ', 'ไม่ครบ', 'เสียหาย'];
-  let rtSelectedAssets = [];   // { Asset_ID, Name, Brand_Model, Serial_Number, status, note }
+  let rtSelectedAssets = [];   // { Asset_ID, Name, Brand_Model, Serial_Number, Assigned_To, status, note }
+  let rtAutoReturnerName_ = ''; // ชื่อผู้ถือครองที่ตรวจจับได้จากชิ้นแรกที่เพิ่ม (สแกน/ค้นหา) ใน step 1
   let rtReturnsCache = [];     // ประวัติใบส่งคืน (โหลดจาก getAssetReturns)
   let rtSigCtx = null;
   let rtSigDrawing = false;
@@ -3569,15 +3735,16 @@
   }
 
   document.getElementById('rtStep1NextBtn').addEventListener('click', () => {
-    const name = document.getElementById('rtReturnerName').value.trim();
-    if (!name) { showToast('กรุณากรอกชื่อผู้คืนก่อน'); return; }
+    if (!rtSelectedAssets.length) { showToast('กรุณาสแกน/เลือกทรัพย์สินอย่างน้อย 1 ชิ้น'); return; }
+    prefillRtReturnerInfo_();
     renderRtHeldByBox();
     renderRtSelectedList();
     showRtStep(2);
   });
   document.getElementById('rtStep2BackBtn').addEventListener('click', () => showRtStep(1));
   document.getElementById('rtStep2NextBtn').addEventListener('click', () => {
-    if (!rtSelectedAssets.length) { showToast('กรุณาเลือกทรัพย์สินอย่างน้อย 1 ชิ้น'); return; }
+    const name = document.getElementById('rtReturnerName').value.trim();
+    if (!name) { showToast('กรุณากรอกชื่อผู้คืนก่อน'); return; }
     const missingStatus = rtSelectedAssets.filter(a => !a.status);
     if (missingStatus.length) {
       showToast('กรุณาเลือกสถานะการคืนให้ครบทุกชิ้น (' + missingStatus.map(a => a.Asset_ID).join(', ') + ')');
@@ -3588,10 +3755,54 @@
   document.getElementById('rtStep3BackBtn').addEventListener('click', () => showRtStep(2));
 
   /**
-   * แสดงรายการทรัพย์สินที่ "ผู้คืน" คนนี้ถือครองอยู่ตอนนี้ (กรอง allAssetsCache
-   * ด้วย Assigned_To ตรงกับชื่อที่กรอกไว้ในขั้นตอน 1 แบบไม่สนตัวพิมพ์เล็ก/ใหญ่)
-   * ให้กด "+ เพิ่ม" ได้เลยโดยไม่ต้องพิมพ์ค้นหาซ้ำ เร็วกว่าเวลาคืนของหลายชิ้น
-   * พร้อมกัน (ไม่ยิง API เพิ่ม ใช้ allAssetsCache ก้อนเดียวกับแท็บ "ทรัพย์สิน")
+   * เติมชื่อ/ตำแหน่ง/แผนกผู้คืนอัตโนมัติ (ขั้นตอน 2) จากผู้ถือครองปัจจุบันของ
+   * ชิ้นแรกที่สแกน/เลือกไว้ในขั้นตอน 1 (rtAutoReturnerName_) — ไม่เติมทับถ้า
+   * ผู้ใช้พิมพ์ชื่อเองไว้แล้ว (เช่น ย้อนกลับมาแก้ไข) หรือหาผู้ถือครองไม่เจอเลย
+   * ส่วนตำแหน่ง/แผนกดึงมาจากใบเซ็นรับล่าสุดของทรัพย์สินชิ้นนั้น (Asset_Handover)
+   * เพราะชีต Assets เก็บแค่ชื่อผู้ถือครอง (Assigned_To) ไม่มีตำแหน่ง/แผนกแยก
+   */
+  function prefillRtReturnerInfo_() {
+    const nameInput = document.getElementById('rtReturnerName');
+    if (nameInput.value.trim() || !rtAutoReturnerName_) return;
+    nameInput.value = rtAutoReturnerName_;
+    const lastHandover = findLatestHandoverForAsset_(rtSelectedAssets[0].Asset_ID);
+    if (lastHandover) {
+      document.getElementById('rtPosition').value = lastHandover.Position || '';
+      document.getElementById('rtDepartment').value = lastHandover.Department || '';
+    }
+  }
+
+  /** หาใบเซ็นรับล่าสุดที่มีรหัสทรัพย์สินชิ้นนี้อยู่ในใบ (Asset_IDs เก็บเป็น
+   * string คั่นด้วย ', ' — ดู saveAssetHandover() ฝั่ง server) hoHandoversCache
+   * เรียงใหม่สุดขึ้นก่อนอยู่แล้ว (ดู getAssetHandovers()) จึงหาตัวแรกที่ตรงได้เลย */
+  function findLatestHandoverForAsset_(assetId) {
+    return hoHandoversCache.find(r =>
+      String(r.Asset_IDs || '').split(',').map(s => s.trim()).includes(assetId)
+    ) || null;
+  }
+
+  /** คำนวณ rtAutoReturnerName_ ใหม่จากชิ้นแรกในรายการปัจจุบัน (เผื่อกรณีลบชิ้น
+   * แรกที่เคยใช้กำหนดชื่อออกไป ต้องเปลี่ยนไปอิงชิ้นถัดไปแทน) */
+  function recomputeRtAutoReturner_() {
+    rtAutoReturnerName_ = rtSelectedAssets.length ? String(rtSelectedAssets[0].Assigned_To || '').trim() : '';
+  }
+
+  // สแกน QR เพื่อเพิ่มทรัพย์สินที่จะคืน — สแกนต่อเนื่องได้หลายชิ้น (ชิ้นที่ 2, 3,
+  // 4, ...) โดยไม่ต้องปิด-เปิดตัวสแกนใหม่ทุกครั้ง กด "เสร็จสิ้น" ตอนครบแล้วค่อยปิด
+  document.getElementById('rtScanBtn').addEventListener('click', () => {
+    openAssetScannerModal_({
+      title: 'สแกน QR ทรัพย์สินที่จะคืน',
+      hint: 'เล็งกล้องไปที่ QR บนตัวเครื่อง เพิ่มได้ทีละหลายชิ้นต่อเนื่องกัน แล้วกด "เสร็จสิ้น" เมื่อครบ',
+      onDecode: (assetId) => addRtAsset(assetId)
+    });
+  });
+
+  /**
+   * แสดงรายการทรัพย์สินอื่นที่ "ผู้คืน" คนนี้ถือครองอยู่ตอนนี้ (กรอง
+   * allAssetsCache ด้วย Assigned_To ตรงกับชื่อในช่องผู้คืนของขั้นตอน 2 แบบไม่
+   * สนตัวพิมพ์เล็ก/ใหญ่) เผื่อลืมสแกนบางชิ้นในขั้นตอนที่ 1 กด "+ เพิ่ม" ได้เลย
+   * โดยไม่ต้องย้อนกลับไปสแกนใหม่ (ไม่ยิง API เพิ่ม ใช้ allAssetsCache ก้อนเดียว
+   * กับแท็บ "ทรัพย์สิน")
    */
   function renderRtHeldByBox() {
     const name = document.getElementById('rtReturnerName').value.trim().toLowerCase();
@@ -3603,15 +3814,10 @@
       String(a.Assigned_To || '').trim().toLowerCase() === name && !selectedIds.has(a.Asset_ID)
     );
 
-    if (!held.length) {
-      box.innerHTML = rtSelectedAssets.length
-        ? ''
-        : '<div class="empty-state">ไม่พบทรัพย์สินที่ถือครองอยู่ในชื่อนี้ ลองค้นหาด้านล่างแทน</div>';
-      return;
-    }
+    if (!held.length) { box.innerHTML = ''; return; }
 
     box.innerHTML = `
-      <h4 style="margin:0 0 8px;">ทรัพย์สินที่ "${escapeHtml(document.getElementById('rtReturnerName').value.trim())}" ถือครองอยู่</h4>
+      <h4 style="margin:0 0 8px;">ทรัพย์สินอื่นที่ "${escapeHtml(document.getElementById('rtReturnerName').value.trim())}" ถือครองอยู่</h4>
       ${held.map(a => `
         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px;">
           <div style="min-width:0;">
@@ -3622,11 +3828,12 @@
       `).join('')}
     `;
     box.querySelectorAll('.rtAddBtn').forEach(btn => {
-      btn.addEventListener('click', () => addRtAsset(btn.dataset.assetId));
+      btn.addEventListener('click', () => { addRtAsset(btn.dataset.assetId); renderRtHeldByBox(); renderRtSelectedList(); });
     });
   }
 
-  /** ค้นหาทรัพย์สินจาก allAssetsCache ก้อนเดียวกับแท็บ "ทรัพย์สิน" ไม่ยิง API เพิ่ม */
+  /** ค้นหาทรัพย์สินจาก allAssetsCache ก้อนเดียวกับแท็บ "ทรัพย์สิน" ไม่ยิง API เพิ่ม
+   * (ใช้ในขั้นตอน 1 เป็นทางเลือกสำรองกรณี QR ชำรุด/สแกนไม่ได้) */
   document.getElementById('rtAssetSearchInput').addEventListener('input', renderRtAssetSearchResults);
 
   function renderRtAssetSearchResults() {
@@ -3659,25 +3866,74 @@
     });
   }
 
+  /**
+   * เพิ่มทรัพย์สิน 1 ชิ้นเข้ารายการที่จะคืน ใช้ร่วมกันทั้งปุ่ม "+ เพิ่ม" จากผล
+   * ค้นหา/กล่อง "ถือครองอยู่" และตอนสแกน QR สำเร็จ (ดู rtScanBtn ด้านบน) จึง
+   * คืนค่า {ok, message} กลับมาเสมอ ให้ตัวสแกนเอาไปโชว์เป็น feedback ได้ทันที
+   * ชิ้นแรกที่เพิ่มจะถูกใช้กำหนด rtAutoReturnerName_ (ดู prefillRtReturnerInfo_)
+   * ส่วนชิ้นถัดไปถ้าผู้ถือครองไม่ตรงกับชิ้นแรก จะเพิ่มให้ตามปกติแต่แจ้งเตือนไว้
+   * เผื่อสแกนผิดเครื่อง/ผิดคน (ไม่บล็อก เพราะบางกรณี IT อาจตั้งใจรวมของหลายคน
+   * ไว้ในใบเดียวจริงๆ ให้คนหน้างานตัดสินใจเอง)
+   */
   function addRtAsset(assetId) {
     const asset = allAssetsCache.find(a => a.Asset_ID === assetId);
-    if (!asset || rtSelectedAssets.some(a => a.Asset_ID === assetId)) return;
+    if (!asset) return { ok: false, message: '❌ ไม่พบรหัสทรัพย์สิน ' + assetId };
+    if (rtSelectedAssets.some(a => a.Asset_ID === assetId)) {
+      return { ok: true, message: 'มีอยู่แล้วในรายการ: ' + assetId };
+    }
+    const holder = String(asset.Assigned_To || '').trim();
+    let warn = '';
+    if (rtSelectedAssets.length && holder && rtAutoReturnerName_ && holder.toLowerCase() !== rtAutoReturnerName_.toLowerCase()) {
+      warn = ' (⚠️ ผู้ถือครองคนละคนกับชิ้นแรก: ' + holder + ')';
+    } else if (!holder) {
+      warn = ' (⚠️ ไม่มีผู้ถือครองระบุไว้ในระบบ)';
+    }
     rtSelectedAssets.push({
       Asset_ID: asset.Asset_ID, Name: asset.Name,
       Brand_Model: asset.Brand_Model, Serial_Number: asset.Serial_Number,
-      status: '', note: ''
+      Assigned_To: asset.Assigned_To || '', status: '', note: ''
     });
+    if (!rtAutoReturnerName_ && holder) rtAutoReturnerName_ = holder;
     document.getElementById('rtAssetSearchInput').value = '';
     renderRtAssetSearchResults();
-    renderRtHeldByBox();
-    renderRtSelectedList();
+    renderRtScanList_();
+    return { ok: true, message: '✅ เพิ่ม ' + assetId + ' — ' + asset.Name + warn };
   }
 
   function removeRtAsset(assetId) {
     rtSelectedAssets = rtSelectedAssets.filter(a => a.Asset_ID !== assetId);
+    recomputeRtAutoReturner_();
+    renderRtScanList_();
     renderRtHeldByBox();
     renderRtSelectedList();
   }
+
+  /** แสดงรายการที่สแกน/เลือกไว้ในขั้นตอน 1 — แบบเรียบง่าย (มีแค่ปุ่มลบ) ต่างจาก
+   * renderRtSelectedList() ในขั้นตอน 2 ที่มีปุ่มเลือกสถานะการคืนต่อชิ้นด้วย
+   * (สถานะยังเลือกไม่ได้ตอนนี้ เพราะยังไม่รู้ตัวผู้คืนแน่ชัด) */
+  function renderRtScanList_() {
+    document.getElementById('rtScanCount').textContent = rtSelectedAssets.length;
+    const container = document.getElementById('rtScanSelectedList');
+    container.innerHTML = rtSelectedAssets.length
+      ? rtSelectedAssets.map(a => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 10px; background:var(--foam); border-radius:8px; margin-bottom:6px;">
+          <div style="min-width:0;">
+            <div style="font-size:13.5px;"><strong>${escapeHtml(a.Asset_ID)}</strong> — ${escapeHtml(a.Name)}</div>
+            ${a.Assigned_To ? `<div style="font-size:12px; color:var(--muted);">ผู้ถือครองปัจจุบัน: ${escapeHtml(a.Assigned_To)}</div>` : ''}
+          </div>
+          <button type="button" class="btn btn-secondary rtScanRemoveBtn" data-asset-id="${escapeHtml(a.Asset_ID)}" style="flex-shrink:0;">ลบ</button>
+        </div>
+      `).join('')
+      : '<div class="empty-state">ยังไม่ได้สแกน/เลือกทรัพย์สิน</div>';
+
+    container.querySelectorAll('.rtScanRemoveBtn').forEach(btn => {
+      btn.addEventListener('click', () => removeRtAsset(btn.dataset.assetId));
+    });
+  }
+
+  // เวลาแก้ไขชื่อผู้คืนเอง (เช่น ระบบเติมมาผิด หรือหาผู้ถือครองไม่เจอเลยต้อง
+  // พิมพ์เอง) อัพเดทกล่อง "ทรัพย์สินอื่นที่ถือครองอยู่" ให้ตรงกับชื่อล่าสุดทันที
+  document.getElementById('rtReturnerName').addEventListener('input', renderRtHeldByBox);
 
   /**
    * แสดงรายการที่เลือกไว้ พร้อมปุ่มเลือก "สถานะการคืน" (ครบ/ไม่ครบ/เสียหาย)
@@ -3857,9 +4113,11 @@
     document.getElementById('rtDate').value = new Date().toISOString().split('T')[0];
     document.getElementById('rtNotes').value = '';
     rtSelectedAssets = [];
+    rtAutoReturnerName_ = '';
     rtLastSavedReturn = null;
     document.getElementById('rtAssetSearchInput').value = '';
     renderRtAssetSearchResults();
+    renderRtScanList_();
     renderRtHeldByBox();
     renderRtSelectedList();
     clearRtSignature();
