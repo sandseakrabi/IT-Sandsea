@@ -1006,6 +1006,20 @@
                  ทางย้อนกลับไปพิมพ์ใบที่เพิ่งเซ็นได้เลย) -->
             <div id="hoStep3FormArea">
               <div id="hoSummaryBox" style="background:var(--foam); border-radius:10px; padding:12px 14px; margin-bottom:14px; font-size:13.5px; line-height:1.7;"></div>
+
+              <!-- แนบรูปสภาพทรัพย์สิน (บังคับ) — ทำไมต้องบังคับ 3 รูปขึ้นไป ดูคอมเมนต์
+                   MIN_CONDITION_PHOTOS_ ใน Assets.gs: กันข้อพิพาทภายหลังว่าตอนรับของ
+                   สภาพเป็นยังไง ถ่ายไว้เป็นหลักฐานตั้งแต่วันที่ส่งมอบ -->
+              <div class="field">
+                <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">
+                  แนบรูปสภาพทรัพย์สิน * (อย่างน้อย 3 รูป ให้เห็นสภาพปัจจุบันชัดเจน)
+                </label>
+                <button type="button" class="btn btn-secondary" id="hoPhotoAddBtn" style="width:100%; margin-bottom:8px;">📷 ถ่าย/เลือกรูปเพิ่ม</button>
+                <input type="file" id="hoPhotoInput" accept="image/*" capture="environment" style="display:none">
+                <div id="hoPhotoGrid" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px;"></div>
+                <div class="hint" id="hoPhotoHint">ยังไม่ได้แนบรูป (ต้องมีอย่างน้อย 3 รูป)</div>
+              </div>
+
               <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">ลงลายเซ็นด้านล่างด้วยนิ้ว/ปากกา</label>
               <canvas id="hoSignatureCanvas" width="600" height="220"
                 style="border:1px solid var(--border); border-radius:10px; touch-action:none; width:100%; height:220px; background:#fff; display:block;"></canvas>
@@ -1100,6 +1114,20 @@
 
             <div id="rtStep3FormArea">
               <div id="rtSummaryBox" style="background:var(--foam); border-radius:10px; padding:12px 14px; margin-bottom:14px; font-size:13.5px; line-height:1.7;"></div>
+
+              <!-- แนบรูปสภาพทรัพย์สินตอนรับคืน (บังคับ) — โครงเดียวกับฟอร์มรับทรัพย์สิน
+                   (ดูคอมเมนต์ที่ hoPhotoAddBtn) สำคัญตรงนี้มากเป็นพิเศษ เพราะเป็น
+                   หลักฐานสภาพตอนคืน เทียบกับรูปตอนแจกออกได้ถ้ามีข้อพิพาทเรื่องของชำรุด -->
+              <div class="field">
+                <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">
+                  แนบรูปสภาพทรัพย์สิน * (อย่างน้อย 3 รูป ให้เห็นสภาพปัจจุบันชัดเจน)
+                </label>
+                <button type="button" class="btn btn-secondary" id="rtPhotoAddBtn" style="width:100%; margin-bottom:8px;">📷 ถ่าย/เลือกรูปเพิ่ม</button>
+                <input type="file" id="rtPhotoInput" accept="image/*" capture="environment" style="display:none">
+                <div id="rtPhotoGrid" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px;"></div>
+                <div class="hint" id="rtPhotoHint">ยังไม่ได้แนบรูป (ต้องมีอย่างน้อย 3 รูป)</div>
+              </div>
+
               <label style="font-size:13px; color:var(--muted); display:block; margin-bottom:6px;">ลงลายเซ็นด้านล่างด้วยนิ้ว/ปากกา</label>
               <canvas id="rtSignatureCanvas" width="600" height="220"
                 style="border:1px solid var(--border); border-radius:10px; touch-action:none; width:100%; height:220px; background:#fff; display:block;"></canvas>
@@ -1370,6 +1398,11 @@
     photoZone.style.display = 'block';
     photoInput.value = '';
   });
+
+  // ต้องตรงกับ MIN_CONDITION_PHOTOS_ ใน Assets.gs (ฝั่ง server เช็คซ้ำอีกที
+  // เผื่อคนแก้โค้ดหน้าเว็บเอง/ยิง request ตรงๆ ข้ามหน้าเว็บ) เลข 3 มาจากเหตุผล
+  // เดียวกับที่คอมเมนต์ไว้ใน Assets.gs
+  const MIN_CONDITION_PHOTOS = 3;
 
   function compressImage(file, maxWidth, quality) {
     return new Promise((resolve) => {
@@ -3223,6 +3256,9 @@
   let hoSigHasStroke = false;  // true ทันทีที่ลากเส้นแรก ใช้เช็คก่อนบันทึกว่าเซ็นแล้วจริง
   let hoLastSavedReceipt = null; // เก็บข้อมูลใบล่าสุดที่เพิ่งบันทึกสำเร็จ (รวม signature
                                   // แบบ dataURL ตรงๆ) ไว้ให้ปุ่ม "พิมพ์/ดูใบเซ็นรับ" ใช้ทันที
+  let hoConditionPhotos = [];  // รูปสภาพทรัพย์สินที่แนบไว้ในใบนี้ (base64 ไม่มี prefix,
+                                // เหมือน compressedPhotoBase64 ของฟอร์มแจ้งปัญหาพนักงาน)
+                                // ต้องมีอย่างน้อย MIN_CONDITION_PHOTOS ก่อนถึงจะบันทึกได้
 
   // โลโก้ Sandsea Resort ฝังเป็น base64 ตรงในโค้ดเลย (ไม่ใช้ไฟล์ icon-192.png ที่ใช้
   // อยู่แล้วในแอป เพราะโลโก้เต็มมีตัวหนังสือ "Sand Sea Resort Railay Beach" ชัดเจน
@@ -3400,6 +3436,65 @@
   }
   document.getElementById('hoClearSignBtn').addEventListener('click', clearHoSignature);
 
+  // ===================================================================
+  // แนบรูปสภาพทรัพย์สิน (ฟอร์มรับ) — บังคับอย่างน้อย MIN_CONDITION_PHOTOS รูป
+  // -------------------------------------------------------------------
+  // ทำไมไม่ใช้ input แบบ multiple (เลือกหลายรูปทีเดียว): กล้องมือถือส่วนใหญ่
+  // ถ่ายทีละรูปต่อการเปิดกล้อง 1 ครั้งอยู่แล้ว (attribute capture="environment"
+  // เปิดกล้องตรงแทนคลังรูป) ปุ่ม "ถ่าย/เลือกรูปเพิ่ม" จึงออกแบบให้กดซ้ำได้เรื่อยๆ
+  // ทีละรูป ง่ายกว่าและตรงกับพฤติกรรมถ่ายรูปจริงหน้างานมากกว่า
+  // ===================================================================
+  const hoPhotoAddBtn = document.getElementById('hoPhotoAddBtn');
+  const hoPhotoInput = document.getElementById('hoPhotoInput');
+  const hoPhotoGrid = document.getElementById('hoPhotoGrid');
+  const hoPhotoHint = document.getElementById('hoPhotoHint');
+
+  hoPhotoAddBtn.addEventListener('click', () => hoPhotoInput.click());
+
+  hoPhotoInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    // ใช้ compressImage ตัวเดียวกับฟอร์มแจ้งปัญหาพนักงาน (ย่อขนาด+ลดคุณภาพก่อนส่ง
+    // กันไฟล์ใหญ่เกินไป โดยเฉพาะพอมีหลายรูปต่อใบ)
+    compressImage(file, 1000, 0.7).then(base64 => {
+      hoConditionPhotos.push(base64);
+      renderHoPhotoGrid_();
+      hoPhotoInput.value = ''; // เคลียร์ค่า input เพื่อให้เลือกไฟล์ชื่อเดิมซ้ำได้อีกครั้ง
+    });
+  });
+
+  function renderHoPhotoGrid_() {
+    hoPhotoGrid.innerHTML = hoConditionPhotos.map((base64, idx) => `
+      <div style="position:relative; width:84px; height:84px;">
+        <img src="data:image/jpeg;base64,${base64}" alt="รูปสภาพทรัพย์สิน ${idx + 1}"
+          style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid var(--border);">
+        <button type="button" class="ho-photo-remove-btn" data-idx="${idx}"
+          style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; border:none; background:#c0392b; color:#fff; font-size:13px; line-height:1; cursor:pointer;">✕</button>
+      </div>
+    `).join('');
+
+    const count = hoConditionPhotos.length;
+    if (count === 0) {
+      hoPhotoHint.textContent = 'ยังไม่ได้แนบรูป (ต้องมีอย่างน้อย ' + MIN_CONDITION_PHOTOS + ' รูป)';
+      hoPhotoHint.style.color = '';
+    } else if (count < MIN_CONDITION_PHOTOS) {
+      hoPhotoHint.textContent = 'แนบแล้ว ' + count + ' รูป (ต้องมีอย่างน้อย ' + MIN_CONDITION_PHOTOS + ' รูป — เพิ่มอีก ' + (MIN_CONDITION_PHOTOS - count) + ' รูป)';
+      hoPhotoHint.style.color = '#c0392b';
+    } else {
+      hoPhotoHint.textContent = 'แนบแล้ว ' + count + ' รูป (ครบตามที่กำหนด)';
+      hoPhotoHint.style.color = '#1e7d4a';
+    }
+  }
+
+  // Event delegation: ปุ่ม "✕" ถูกสร้างใหม่ทุกครั้งที่ renderHoPhotoGrid_() จึงต้อง
+  // ผูก listener ที่ container แม่แทน (เหมือนปุ่ม "ดู/พิมพ์ใบเซ็นรับ" ที่อื่นในไฟล์นี้)
+  hoPhotoGrid.addEventListener('click', (e) => {
+    const btn = e.target.closest('.ho-photo-remove-btn');
+    if (!btn) return;
+    hoConditionPhotos.splice(Number(btn.dataset.idx), 1);
+    renderHoPhotoGrid_();
+  });
+
   /** คืนค่า null ถ้ายังไม่ได้ลากเส้นอะไรเลย กันเผลอบันทึกลายเซ็นเปล่าๆ */
   function getHoSignatureDataUrl() {
     if (!hoSigHasStroke) return null;
@@ -3409,6 +3504,14 @@
   document.getElementById('hoSubmitBtn').addEventListener('click', async () => {
     const signatureDataUrl = getHoSignatureDataUrl();
     if (!signatureDataUrl) { showToast('กรุณาเซ็นชื่อยืนยันก่อนบันทึก'); return; }
+
+    // เช็คจำนวนรูปสภาพทรัพย์สินฝั่งหน้าเว็บก่อนยิง API (server เช็คซ้ำอีกทีอยู่
+    // แล้วใน saveAssetHandover() แต่เช็คตรงนี้ก่อนช่วยให้ผู้ใช้เห็น toast ทันที
+    // ไม่ต้องรอ round-trip ไปเซิร์ฟเวอร์แล้วเจอ error กลับมา)
+    if (hoConditionPhotos.length < MIN_CONDITION_PHOTOS) {
+      showToast('กรุณาแนบรูปสภาพทรัพย์สินอย่างน้อย ' + MIN_CONDITION_PHOTOS + ' รูปก่อนบันทึก');
+      return;
+    }
 
     // เก็บข้อมูลฟอร์มไว้ในตัวแปรก่อนยิง API เพราะถ้าบันทึกสำเร็จ เราจะโชว์
     // ปุ่มพิมพ์ทันที (ไม่เคลียร์ฟอร์ม) ต้องใช้ค่าชุดนี้สร้างเอกสารพิมพ์
@@ -3423,7 +3526,10 @@
         Brand_Model: a.Brand_Model, Serial_Number: a.Serial_Number
       })),
       issuedBy: 'ณัฐพงศ์',
-      signatureDataUrl: signatureDataUrl
+      signatureDataUrl: signatureDataUrl,
+      // เก็บ dataURL เต็ม (มี prefix "data:image/jpeg;base64,") ไว้ใช้กับ <img>
+      // ในเอกสารพิมพ์ทันทีหลังบันทึกสำเร็จ (เหมือน signatureDataUrl ด้านบน)
+      conditionPhotoDataUrls: hoConditionPhotos.map(b64 => 'data:image/jpeg;base64,' + b64)
     };
 
     const btn = document.getElementById('hoSubmitBtn');
@@ -3439,7 +3545,8 @@
         assetIds: formSnapshot.items.map(a => a.Asset_ID),
         signatureBase64: signatureDataUrl.split(',')[1],
         signatureMimeType: 'image/png',
-        issuedBy: formSnapshot.issuedBy
+        issuedBy: formSnapshot.issuedBy,
+        conditionPhotos: hoConditionPhotos
       });
       showToast(result.message);
 
@@ -3472,6 +3579,8 @@
     document.getElementById('hoNotes').value = '';
     hoSelectedAssets = [];
     hoLastSavedReceipt = null;
+    hoConditionPhotos = [];
+    renderHoPhotoGrid_();
     document.getElementById('hoAssetSearchInput').value = '';
     renderHoAssetSearchResults();
     renderHoSelectedList();
@@ -3555,6 +3664,11 @@
         : { Asset_ID: id, Name: '(ไม่พบข้อมูลทรัพย์สินนี้แล้ว)' };
     });
 
+    // ใบเก่า: แปลงลิงก์รูปสภาพทรัพย์สินที่เก็บไว้ (array ของลิงก์ Drive จาก
+    // Condition_Photos_List ที่ getAssetHandovers() แปลงให้แล้ว) เป็นลิงก์ดูรูป
+    // ตรงๆ ด้วย driveDirectImageUrl_ ตัวเดียวกับที่ใช้กับลายเซ็น
+    const photoSrcs = (receipt.Condition_Photos_List || []).map(url => driveDirectImageUrl_(url)).filter(Boolean);
+
     openHandoverReceiptDocument_({
       receiptId: receipt.Receipt_ID,
       dateHandover: receipt.Date_Handover,
@@ -3565,6 +3679,7 @@
       issuedBy: receipt.Issued_By,
       items: items,
       signatureSrc: driveDirectImageUrl_(receipt.Signature_URL),
+      photos: photoSrcs,
       // ใบเก่า: ไม่มี dataURL สดให้ใช้แล้ว ใช้เวลาที่บันทึกลงระบบจริง (Created_At
       // มีทั้งวันที่และเวลาอยู่แล้ว) แทนเวลาปัจจุบันที่กดดูย้อนหลัง เพื่อให้ตรงกับ
       // เวลาที่เซ็นจริง ไม่ใช่เวลาที่มาเปิดดูทีหลัง
@@ -3585,6 +3700,7 @@
       issuedBy: data.issuedBy,
       items: data.items,
       signatureSrc: data.signatureDataUrl,
+      photos: data.conditionPhotoDataUrls || [],
       // ใบที่เพิ่งเซ็นสดๆ: ใช้เวลาปัจจุบันตรงนี้เลย ถือว่าเป็นเวลาที่เซ็นจริง
       // (คลาดเคลื่อนแค่ไม่กี่วินาทีระหว่างกดยืนยันกับกดพิมพ์ ไม่มีนัยสำคัญ)
       signedAt: formatDateTimeForDisplay_(new Date())
@@ -3648,6 +3764,11 @@
         .notes-section { margin-bottom:24px; padding:10px 12px; background:#f7fafb; border:1px solid #e0e9ec; border-radius:6px; }
         .notes-title { font-weight:700; font-size:13px; margin-bottom:4px; }
         .notes-body { font-size:13px; white-space:pre-wrap; line-height:1.6; }
+        /* กริดรูปสภาพทรัพย์สิน — วางไว้ "ใต้หมายเหตุ" เสมอ (ดูจุด render ด้านล่าง)
+           ทำไมใช้ 110px และ object-fit:cover: ให้รูปขนาดพอดีตากับกระดาษ A4 พิมพ์ได้
+           หลายรูปในแถวเดียวไม่ล้นหน้ากระดาษ แต่ยังเห็นสภาพทรัพย์สินชัดเจนพอ */
+        .photos-grid { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+        .photos-grid img { width:110px; height:110px; object-fit:cover; border:1px solid #cdd9de; border-radius:6px; }
         .sign-box { text-align:left; margin-top:auto; align-self:flex-start; padding-top:12px; }
         .sign-box img { max-width:140px; max-height:60px; display:block; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
         .sign-placeholder { height:60px; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
@@ -3679,6 +3800,13 @@
           <div class="notes-section">
             <div class="notes-title">หมายเหตุ</div>
             <div class="notes-body">${escapeHtml(opts.notes)}</div>
+          </div>` : ''}
+          ${(opts.photos && opts.photos.length) ? `
+          <div class="notes-section">
+            <div class="notes-title">รูปสภาพทรัพย์สิน (ณ วันที่รับ)</div>
+            <div class="photos-grid">
+              ${opts.photos.map((src, i) => `<img src="${src}" alt="รูปสภาพทรัพย์สิน ${i + 1}">`).join('')}
+            </div>
           </div>` : ''}
           <div class="sign-box">
             ${opts.signatureSrc ? `<img src="${opts.signatureSrc}" alt="ลายเซ็น">` : `<div class="sign-placeholder"></div>`}
@@ -3720,6 +3848,7 @@
   let rtSigDrawing = false;
   let rtSigHasStroke = false;
   let rtLastSavedReturn = null; // เก็บข้อมูลใบล่าสุดที่เพิ่งบันทึกสำเร็จ ไว้ให้ปุ่ม "พิมพ์/ดูใบส่งคืน" ใช้ทันที
+  let rtConditionPhotos = [];  // รูปสภาพทรัพย์สินตอนคืน (โครงเดียวกับ hoConditionPhotos ของฟอร์มรับ)
 
   function rtStatusPillClass_(status) {
     if (status === 'ครบ') return 'pill-done';
@@ -4045,6 +4174,55 @@
   }
   document.getElementById('rtClearSignBtn').addEventListener('click', clearRtSignature);
 
+  // แนบรูปสภาพทรัพย์สิน (ฟอร์มส่งคืน) — โครงเดียวกับฟอร์มรับทรัพย์สินทุกประการ
+  // (ดูคอมเมนต์อธิบายเหตุผลที่ hoPhotoAddBtn ด้านบน)
+  const rtPhotoAddBtn = document.getElementById('rtPhotoAddBtn');
+  const rtPhotoInput = document.getElementById('rtPhotoInput');
+  const rtPhotoGrid = document.getElementById('rtPhotoGrid');
+  const rtPhotoHint = document.getElementById('rtPhotoHint');
+
+  rtPhotoAddBtn.addEventListener('click', () => rtPhotoInput.click());
+
+  rtPhotoInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    compressImage(file, 1000, 0.7).then(base64 => {
+      rtConditionPhotos.push(base64);
+      renderRtPhotoGrid_();
+      rtPhotoInput.value = '';
+    });
+  });
+
+  function renderRtPhotoGrid_() {
+    rtPhotoGrid.innerHTML = rtConditionPhotos.map((base64, idx) => `
+      <div style="position:relative; width:84px; height:84px;">
+        <img src="data:image/jpeg;base64,${base64}" alt="รูปสภาพทรัพย์สิน ${idx + 1}"
+          style="width:100%; height:100%; object-fit:cover; border-radius:8px; border:1px solid var(--border);">
+        <button type="button" class="rt-photo-remove-btn" data-idx="${idx}"
+          style="position:absolute; top:-6px; right:-6px; width:22px; height:22px; border-radius:50%; border:none; background:#c0392b; color:#fff; font-size:13px; line-height:1; cursor:pointer;">✕</button>
+      </div>
+    `).join('');
+
+    const count = rtConditionPhotos.length;
+    if (count === 0) {
+      rtPhotoHint.textContent = 'ยังไม่ได้แนบรูป (ต้องมีอย่างน้อย ' + MIN_CONDITION_PHOTOS + ' รูป)';
+      rtPhotoHint.style.color = '';
+    } else if (count < MIN_CONDITION_PHOTOS) {
+      rtPhotoHint.textContent = 'แนบแล้ว ' + count + ' รูป (ต้องมีอย่างน้อย ' + MIN_CONDITION_PHOTOS + ' รูป — เพิ่มอีก ' + (MIN_CONDITION_PHOTOS - count) + ' รูป)';
+      rtPhotoHint.style.color = '#c0392b';
+    } else {
+      rtPhotoHint.textContent = 'แนบแล้ว ' + count + ' รูป (ครบตามที่กำหนด)';
+      rtPhotoHint.style.color = '#1e7d4a';
+    }
+  }
+
+  rtPhotoGrid.addEventListener('click', (e) => {
+    const btn = e.target.closest('.rt-photo-remove-btn');
+    if (!btn) return;
+    rtConditionPhotos.splice(Number(btn.dataset.idx), 1);
+    renderRtPhotoGrid_();
+  });
+
   function getRtSignatureDataUrl() {
     if (!rtSigHasStroke) return null;
     return document.getElementById('rtSignatureCanvas').toDataURL('image/png');
@@ -4053,6 +4231,13 @@
   document.getElementById('rtSubmitBtn').addEventListener('click', async () => {
     const signatureDataUrl = getRtSignatureDataUrl();
     if (!signatureDataUrl) { showToast('กรุณาเซ็นชื่อยืนยันก่อนบันทึก'); return; }
+
+    // เหตุผลเดียวกับฟอร์มรับทรัพย์สิน: เช็คจำนวนรูปก่อนยิง API ให้ผู้ใช้เห็น
+    // toast ทันที
+    if (rtConditionPhotos.length < MIN_CONDITION_PHOTOS) {
+      showToast('กรุณาแนบรูปสภาพทรัพย์สินอย่างน้อย ' + MIN_CONDITION_PHOTOS + ' รูปก่อนบันทึก');
+      return;
+    }
 
     const formSnapshot = {
       returnerName: document.getElementById('rtReturnerName').value.trim(),
@@ -4066,7 +4251,8 @@
         status: a.status, note: a.note || ''
       })),
       receivedBy: 'ณัฐพงศ์',
-      signatureDataUrl: signatureDataUrl
+      signatureDataUrl: signatureDataUrl,
+      conditionPhotoDataUrls: rtConditionPhotos.map(b64 => 'data:image/jpeg;base64,' + b64)
     };
 
     const btn = document.getElementById('rtSubmitBtn');
@@ -4082,7 +4268,8 @@
         items: formSnapshot.items.map(a => ({ assetId: a.Asset_ID, status: a.status, note: a.note })),
         signatureBase64: signatureDataUrl.split(',')[1],
         signatureMimeType: 'image/png',
-        receivedBy: formSnapshot.receivedBy
+        receivedBy: formSnapshot.receivedBy,
+        conditionPhotos: rtConditionPhotos
       });
       showToast(result.message);
 
@@ -4115,6 +4302,8 @@
     rtSelectedAssets = [];
     rtAutoReturnerName_ = '';
     rtLastSavedReturn = null;
+    rtConditionPhotos = [];
+    renderRtPhotoGrid_();
     document.getElementById('rtAssetSearchInput').value = '';
     renderRtAssetSearchResults();
     renderRtScanList_();
@@ -4189,6 +4378,9 @@
       };
     });
 
+    // เหตุผลเดียวกับ viewHandoverReceiptByReceiptId_() ด้านบน
+    const photoSrcs = (ret.Condition_Photos_List || []).map(url => driveDirectImageUrl_(url)).filter(Boolean);
+
     openReturnReceiptDocument_({
       returnId: ret.Return_ID,
       dateReturn: ret.Date_Return,
@@ -4199,6 +4391,7 @@
       receivedBy: ret.Received_By,
       items: fullItems,
       signatureSrc: driveDirectImageUrl_(ret.Signature_URL),
+      photos: photoSrcs,
       signedAt: ret.Created_At
     });
   }
@@ -4215,6 +4408,7 @@
       receivedBy: data.receivedBy,
       items: data.items,
       signatureSrc: data.signatureDataUrl,
+      photos: data.conditionPhotoDataUrls || [],
       signedAt: formatDateTimeForDisplay_(new Date())
     });
   }
@@ -4271,6 +4465,9 @@
         .notes-section { margin-bottom:24px; padding:10px 12px; background:#f7fafb; border:1px solid #e0e9ec; border-radius:6px; }
         .notes-title { font-weight:700; font-size:13px; margin-bottom:4px; }
         .notes-body { font-size:13px; white-space:pre-wrap; line-height:1.6; }
+        /* เหตุผลเดียวกับใบเซ็นรับ (openHandoverReceiptDocument_) */
+        .photos-grid { display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+        .photos-grid img { width:110px; height:110px; object-fit:cover; border:1px solid #cdd9de; border-radius:6px; }
         .sign-box { text-align:left; margin-top:auto; align-self:flex-start; padding-top:12px; }
         .sign-box img { max-width:140px; max-height:60px; display:block; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
         .sign-placeholder { height:60px; border-bottom:1px solid #0F3B57; margin-bottom:4px; }
@@ -4302,6 +4499,13 @@
           <div class="notes-section">
             <div class="notes-title">หมายเหตุ</div>
             <div class="notes-body">${escapeHtml(opts.notes)}</div>
+          </div>` : ''}
+          ${(opts.photos && opts.photos.length) ? `
+          <div class="notes-section">
+            <div class="notes-title">รูปสภาพทรัพย์สิน (ณ วันที่คืน)</div>
+            <div class="photos-grid">
+              ${opts.photos.map((src, i) => `<img src="${src}" alt="รูปสภาพทรัพย์สิน ${i + 1}">`).join('')}
+            </div>
           </div>` : ''}
           <div class="sign-box">
             ${opts.signatureSrc ? `<img src="${opts.signatureSrc}" alt="ลายเซ็น">` : `<div class="sign-placeholder"></div>`}
