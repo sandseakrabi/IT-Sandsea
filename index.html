@@ -398,6 +398,8 @@
   .btn-primary { background: var(--ocean); color: var(--white); }
   .btn-primary:disabled { background: #B8C7CC; }
   .btn-secondary { background: var(--foam); color: var(--deep-sea); }
+  .btn-danger { background: #FBEAE8; color: #B3382E; border: 1px solid #F0C4BF; }
+  .btn-danger:disabled { opacity: .6; }
 
   .nvr-row {
     display: grid; grid-template-columns: 1fr 90px 90px; gap: 10px; align-items: end;
@@ -2867,8 +2869,32 @@
         </div>
         <div class="field"><label>หมายเหตุ</label><textarea id="assetNotes">${isEdit ? escapeHtml(asset.Notes || '') : ''}</textarea></div>
         <button type="submit" class="btn btn-primary" style="width:100%;" id="assetFormSubmitBtn">บันทึก</button>
+        ${isEdit ? `<button type="button" class="btn btn-danger" style="width:100%; margin-top:10px;" id="assetDeleteBtn">🗑 ลบทรัพย์สินนี้</button>` : ''}
       </form>
     `);
+
+    // ปุ่มลบ (โหมดแก้ไขเท่านั้น) ใช้กรณีสร้างผิด/สร้างซ้ำ — ถามยืนยันก่อนเสมอ
+    // หลังบ้านจะไม่ยอมลบถ้ายังมีผู้ถือครอง หรือมีอยู่ในใบเซ็นรับ/ใบส่งคืนแล้ว
+    // (แจ้งเหตุผลกลับมาเป็น error แสดงใน toast)
+    if (isEdit) {
+      document.getElementById('assetDeleteBtn').addEventListener('click', async () => {
+        const ok = confirm('ยืนยันลบทรัพย์สิน ' + asset.Asset_ID + ' (' + (asset.Name || '') + ') ?\n\nประวัติของทรัพย์สินชิ้นนี้จะถูกลบด้วย และกู้คืนไม่ได้');
+        if (!ok) return;
+        const delBtn = document.getElementById('assetDeleteBtn');
+        delBtn.disabled = true;
+        delBtn.textContent = 'กำลังลบ...';
+        try {
+          await apiPost('deleteAsset', { assetId: asset.Asset_ID });
+          showToast('ลบทรัพย์สิน ' + asset.Asset_ID + ' เรียบร้อย');
+          closeModal();
+          await loadAssets();
+        } catch (err) {
+          showToast('ลบไม่สำเร็จ: ' + err.message);
+          delBtn.disabled = false;
+          delBtn.textContent = '🗑 ลบทรัพย์สินนี้';
+        }
+      });
+    }
 
     // ทำไมต้องมี: ช่องสเปคเครื่อง (Device Name/IP/CPU/RAM/DDR/HDD-SSD/Windows)
     // มีความหมายเฉพาะกับเครื่อง PC/Notebook เท่านั้น ส่วน IP/MAC มีความหมาย
