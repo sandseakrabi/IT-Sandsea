@@ -2008,13 +2008,19 @@
   }
 
   function renderCaseList() {
-    // กรองเฉพาะเคสของ "เดือนปัจจุบัน" เท่านั้น เทียบจาก Date_Reported (รูปแบบ
-    // "yyyy-MM-dd HH:mm:ss") กับเดือน-ปีปัจจุบันของเครื่อง วิธีนี้กรองแค่ตอน
-    // แสดงผลบนหน้าเว็บเท่านั้น ไม่ได้ลบหรือแตะข้อมูลใน Google Sheet เลย
-    // ข้อมูลเดือนก่อนหน้ายังอยู่ครบในชีต แค่ไม่ถูกดึงมาโชว์ในหน้านี้
+    // แสดงเคสของ "เดือนปัจจุบัน" + เคส "ค้างจากเดือนก่อน" ที่ยังไม่ปิด (สถานะไม่ใช่ Done)
+    // ทำไมต้องเอาเคสค้างมาด้วย: เดิมหน้านี้ตัดโชว์แค่เดือนปัจจุบัน ทำให้เคสเดือนก่อนที่ยัง
+    // New / In Progress หายไปจากหน้าจอ ทั้งที่ Dashboard และ badge นับรวมอยู่ (ตัวเลขไม่ตรงกัน
+    // และไม่มีใครเห็นให้ไปปิดงาน) เคสจะหายไปจากหน้านี้ก็ต่อเมื่อบันทึกเป็น "เสร็จแล้ว"
+    // และข้ามเดือนไปแล้วเท่านั้น วิธีนี้กรองแค่ตอนแสดงผล ไม่แตะข้อมูลใน Google Sheet
     const now = new Date();
     const currentYearMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-    const thisMonthCases = allCasesCache.filter(c => (c.Date_Reported || '').startsWith(currentYearMonth));
+    const isThisMonth = c => (c.Date_Reported || '').startsWith(currentYearMonth);
+    const isCarryOver = c => !isThisMonth(c) && c.Status !== 'Done';
+    const thisMonthCases = allCasesCache
+      .filter(c => isThisMonth(c) || isCarryOver(c))
+      // เคสค้างจากเดือนก่อนขึ้นก่อน เพื่อให้เห็นชัดว่ายังไม่ได้ปิด
+      .sort((a, b) => (isCarryOver(b) ? 1 : 0) - (isCarryOver(a) ? 1 : 0));
 
     const filtered = currentCaseFilter === 'all'
       ? thisMonthCases
@@ -2052,6 +2058,7 @@
             </div>
             <span class="pill ${pillClass}">${statusLabel}</span>
           </div>
+          ${isCarryOver(c) ? '<div style="font-size:12px;font-weight:700;color:#9C3B33;margin:2px 0 6px;">⚠ ค้างจากเดือนก่อน</div>' : ''}
           <div class="desc">${escapeHtml(c.Description)}</div>
           ${photoHtml}
           <div class="actions">
