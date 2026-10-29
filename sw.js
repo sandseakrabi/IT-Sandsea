@@ -14,7 +14,7 @@
  * Apps Script (domain script.google.com) วิ่งตรงไปอินเทอร์เน็ตเสมอ ไม่ผ่านแคช
  */
 
-const CACHE_NAME = 'sandsea-it-shell-v2';
+const CACHE_NAME = 'sandsea-it-shell-v3';
 
 // ไฟล์เปลือกแอป (app shell) ที่จะแคชไว้ตั้งแต่ตอนติดตั้ง
 // ทำไมต้องใช้ path สัมพัทธ์ (relative path): เพราะ Apps Script Web App
@@ -24,7 +24,9 @@ const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './config.js'
+  './config.js',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 /**
